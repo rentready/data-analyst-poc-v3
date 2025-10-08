@@ -111,7 +111,16 @@ def main():
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
             AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
         ):
-            logger.info(f"MCP token: {mcp_token}")
+            knowledge_collector_agent = client.create_agent(
+                name="Facts collector",
+                description="This tool determines what facts are needed to answer the user's question.",
+                instructions="You are an expert who knows the data or observe all tools and information to get insights about what is needed.",
+                tools=[
+                    mcp_tool_with_approval,
+                    get_time
+                ],
+                additional_instructions="You will use the MCP tool to get the data before any asuumptions. You have all tools to do it, read their explanations and use them.",
+            )
 
             sql_builder_agent = client.create_agent(
                 name="Sql Generator",
@@ -121,6 +130,7 @@ def main():
                     mcp_tool_with_approval,
                     get_time
                 ],
+                additional_instructions="You will use the MCP tool to get the data before any asuumptions about what query should be. You have all tools to do it, read their explanations and use them.",
             )
 
             sql_validtor_agent = client.create_agent(
@@ -131,6 +141,7 @@ def main():
                     mcp_tool_with_approval,
                     get_time
                 ],
+                additional_instructions="You will use the MCP sql_validate tool to validate the SQL Query. Apply all kinds of validation, review the sample data from tables and MCP tools, to ensure that correct fields are used.",
             )
 
             data_extractor_agent = client.create_agent(
@@ -141,6 +152,7 @@ def main():
                     mcp_tool_with_approval,
                     get_time
                 ],
+                additional_instructions="You will use the MCP tool to get the data from the database. Apply all kinds of validation, review the sample data from tables and MCP tools, to ensure that correct fields are used.",
             )
 
             # Словари для хранения контейнеров и накопленного текста для каждого агента
@@ -201,7 +213,7 @@ def main():
 
             workflow = (
                 MagenticBuilder()
-                .participants(sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
+                .participants(knowledge_collector = knowledge_collector_agent, sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
                 .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                 .with_standard_manager(
                     chat_client=OpenAIChatClient(**client_params),
