@@ -14,6 +14,7 @@ from agent_framework import WorkflowBuilder, MagenticBuilder, WorkflowOutputEven
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
 from azure.identity.aio import DefaultAzureCredential
 from agent_framework.azure import AzureAIAgentClient
+from datetime import datetime, timezone
 from azure.ai.projects.aio import AIProjectClient
 from agent_framework import (
     ChatAgent,
@@ -37,6 +38,10 @@ patch_azure_ai_client()
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
+def get_time() -> str:
+    """Get the current UTC time."""
+    current_time = datetime.now(timezone.utc)
+    return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
 def initialize_app() -> None:
     """
@@ -95,17 +100,11 @@ def main():
         headers={"Authorization": f"Bearer {mcp_token}"},
     )
 
-    mcp_tool = MCPStreamableHTTPTool(
-        name="rentready_mcp",
-        url=mcp_config[MCP_SERVER_URL_KEY],
-        headers={"Authorization": f"Bearer {mcp_token}"},  # ✅ Будут использованы!
-        description="Rent Ready MCP tool",
-        approval_mode="never_require",
-        # НЕ указывайте allowed_tools, если хотите разрешить все инструменты
-    )
+    logger.info(f"MCP tool created with URL: {mcp_config[MCP_SERVER_URL_KEY]}")
 
     async def run_workflow(prompt: str):
         # Prepare common client parameters
+        logger.info(f"MCP token: {mcp_token}")
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
             client_params["base_url"] = base_url
@@ -115,26 +114,36 @@ def main():
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
             AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
         ):
-            
+            logger.info(f"MCP token: {mcp_token}")
+
             sql_builder_agent = client.create_agent(
                 name="Sql Generator",
                 description="SQL query builder agent",
                 instructions="You are data analyst and you will observe the user's question and you will build a SQL Query to use in subsequent steps. You will use the MCP tool to get the data before any asuumptions about what query should be.",
-                tools=mcp_tool_with_approval,
+                tools=[
+                    mcp_tool_with_approval,
+                    get_time
+                ],
             )
 
             sql_validtor_agent = client.create_agent(
                 name="Sql Validator",
                 description="SQL query validator agent",
                 instructions="You are data analyst and you will observe the SQL Query and you will validate it.",
-                tools=mcp_tool_with_approval,
+                tools=[
+                    mcp_tool_with_approval,
+                    get_time
+                ],
             )
 
             data_extractor_agent = client.create_agent(
                 name="Data Extractor",
                 description="Data extraction agent",
                 instructions="You are data analyst and you will observe the SQL Query and you will extract the data from the database.",
-                tools=mcp_tool_with_approval,
+                tools=[
+                    mcp_tool_with_approval,
+                    get_time
+                ],
             )
 
             # Словари для хранения контейнеров и накопленного текста для каждого агента
