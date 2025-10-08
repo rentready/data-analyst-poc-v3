@@ -100,11 +100,8 @@ def main():
         headers={"Authorization": f"Bearer {mcp_token}"},
     )
 
-    logger.info(f"MCP tool created with URL: {mcp_config[MCP_SERVER_URL_KEY]}")
-
     async def run_workflow(prompt: str):
         # Prepare common client parameters
-        logger.info(f"MCP token: {mcp_token}")
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
             client_params["base_url"] = base_url

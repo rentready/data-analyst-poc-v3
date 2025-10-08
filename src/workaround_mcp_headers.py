@@ -47,40 +47,7 @@ def patch_azure_ai_client():
     """Apply monkey patch to support HostedMCPTool headers."""
     
     # Save original method references
-    _original_prep_tools = AzureAIAgentClient._prep_tools
     _original_create_run_options = AzureAIAgentClient._create_run_options
-    
-    async def _patched_prep_tools(
-        self, 
-        tools: Sequence["ToolProtocol | MutableMapping[str, Any]"], 
-        run_options: dict[str, Any] | None = None
-    ) -> list[Any]:
-        """Patched version that handles HostedMCPTool headers correctly."""
-        from agent_framework import HostedMCPTool
-        from azure.ai.agents.models import McpTool
-        
-        # Process each tool individually
-        tool_definitions = []
-        
-        for tool in tools:
-            # Special handling for HostedMCPTool with headers
-            if isinstance(tool, HostedMCPTool):
-                mcp_tool = McpTool(
-                    server_label=tool.name.replace(" ", "_"),
-                    server_url=str(tool.url),
-                    allowed_tools=list(tool.allowed_tools) if tool.allowed_tools else [],
-                )
-                # Apply headers workaround - update_headers takes (name, value) pairs
-                if tool.headers:
-                    for header_name, header_value in tool.headers.items():
-                        mcp_tool.update_headers(header_name, header_value)
-                tool_definitions.extend(mcp_tool.definitions)
-            else:
-                # For other tools, use original method processing
-                single_tool_result = await _original_prep_tools(self, [tool], run_options)
-                tool_definitions.extend(single_tool_result)
-        
-        return tool_definitions
 
     async def _patched_create_run_options(
         self,
@@ -209,64 +176,7 @@ def patch_azure_ai_client():
 
         return run_options, required_action_results
 
-
-    async def _patched_create_agent_stream(
-        self,
-        thread_id: str | None,
-        agent_id: str,
-        run_options: dict[str, Any],
-        required_action_results: list[FunctionResultContent | FunctionApprovalResponseContent] | None,
-    ) -> tuple[AsyncAgentRunStream[AsyncAgentEventHandler[Any]] | AsyncAgentEventHandler[Any], str]:
-        """Create the agent stream for processing.
-
-        Returns:
-            tuple: (stream, final_thread_id)
-        """
-        # Get any active run for this thread
-        thread_run = await self._get_active_thread_run(thread_id)
-
-        stream: AsyncAgentRunStream[AsyncAgentEventHandler[Any]] | AsyncAgentEventHandler[Any]
-        handler: AsyncAgentEventHandler[Any] = AsyncAgentEventHandler()
-        tool_run_id, tool_outputs, tool_approvals = self._convert_required_action_to_tool_output(
-            required_action_results
-        )
-
-        if (
-            thread_run is not None
-            and tool_run_id is not None
-            and tool_run_id == thread_run.id
-            and (tool_outputs or tool_approvals)
-        ):  # type: ignore[reportUnknownMemberType]
-            # There's an active run and we have tool results to submit, so submit the results.
-            args: dict[str, Any] = {
-                "thread_id": thread_run.thread_id,
-                "run_id": tool_run_id,
-                "event_handler": handler,
-            }
-            if tool_outputs:
-                args["tool_outputs"] = tool_outputs
-            if tool_approvals:
-                args["tool_approvals"] = tool_approvals
-            await self.project_client.agents.runs.submit_tool_outputs_stream(**args)  # type: ignore[reportUnknownMemberType]
-            # Pass the handler to the stream to continue processing
-            stream = handler  # type: ignore
-            final_thread_id = thread_run.thread_id
-        else:
-            # Handle thread creation or cancellation
-            final_thread_id = await self._prepare_thread(thread_id, thread_run, run_options)
-
-            # Now create a new run and stream the results.
-            run_options.pop("conversation_id", None)
-            logger.info(f"Run options: {run_options}")
-            stream = await self.project_client.agents.runs.stream(  # type: ignore[reportUnknownMemberType]
-                final_thread_id, agent_id=agent_id, **run_options
-            )
-
-        return stream, final_thread_id
-
     
     # Apply the patch
-    AzureAIAgentClient._prep_tools = _patched_prep_tools
     AzureAIAgentClient._create_run_options = _patched_create_run_options
-    AzureAIAgentClient._create_agent_stream = _patched_create_agent_stream
     print("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
