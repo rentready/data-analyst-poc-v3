@@ -126,6 +126,7 @@ def main():
                 name="Facts collector",
                 description="This tool determines what facts are needed to answer the user's question.",
                 instructions="You are an expert who knows the data or observe all tools and information to get insights about what is needed.",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -137,6 +138,7 @@ def main():
                 name="Sql Generator",
                 description="SQL query builder agent",
                 instructions="You are data analyst and you will observe the user's question and you will build a SQL Query to use in subsequent steps. You will use the MCP tool to get the data before any asuumptions about what query should be.",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -148,6 +150,7 @@ def main():
                 name="Sql Validator",
                 description="SQL query validator agent",
                 instructions="You are data analyst and you will observe the SQL Query and you will validate it.",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -159,6 +162,7 @@ def main():
                 name="Data Extractor",
                 description="Data extraction agent",
                 instructions="You are data analyst and you will observe the SQL Query and you will extract the data from the database.",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
