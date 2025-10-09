@@ -40,9 +40,11 @@ from agent_framework import (
 )
 
 from src.workaround_mcp_headers import patch_azure_ai_client
+from src.workaround_magentic import patch_magentic_orchestrator
 
-# Применяем патч ДО создания клиента
+# Применяем патчи ДО создания клиента
 patch_azure_ai_client()
+patch_magentic_orchestrator()
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -226,7 +228,7 @@ def main():
                 .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                 .with_standard_manager(
                     chat_client=OpenAIChatClient(**client_params),
-                    
+
                     instructions="You are a data analyst and you will respond to the user's question based on the knowledge collected and the data extracted.",
                     task_ledger_facts_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
                     task_ledger_plan_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
