@@ -42,10 +42,12 @@ def setup_environment_variables() -> None:
     """Set up environment variables for DefaultAzureCredential."""
     try:
         env_config = st.secrets[ENV_SECRETS_KEY]
+        foundry_config = st.secrets[AZURE_AI_FOUNDRY_SECRETS_KEY]
         import os
         os.environ[AZURE_CLIENT_ID_KEY] = env_config.get(AZURE_CLIENT_ID_KEY, "")
         os.environ[AZURE_CLIENT_SECRET_KEY] = env_config.get(AZURE_CLIENT_SECRET_KEY, "")
         os.environ[AZURE_TENANT_ID_KEY] = env_config.get(AZURE_TENANT_ID_KEY, "")
+        os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = foundry_config.get(MODEL_DEPLOYMENT_NAME_KEY, "")
     except KeyError:
         pass  # No environment variables found
 
