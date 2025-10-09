@@ -27,9 +27,6 @@ def patch_magentic_orchestrator():
     def _patched_init(self, *args, **kwargs):
         _original_init(self, *args, **kwargs)
         self._needs_reset = False
-        logger.info(f"Model deployement name is :{self.model_id}")
-        self.model_id = "gpt-4.1-200K"
-        logger.info("Magentic Orchestrator: Initialized")
     
     # Patched _run_inner_loop to check reset flag AFTER releasing lock
     async def _patched_run_inner_loop(

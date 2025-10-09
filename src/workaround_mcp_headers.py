@@ -48,6 +48,12 @@ def patch_azure_ai_client():
     
     # Save original method references
     _original_create_run_options = AzureAIAgentClient._create_run_options
+    _original_init = AzureAIAgentClient.__init__
+    
+    # Patched __init__ to add _needs_reset flag
+    def _patched_init(self, *args, **kwargs):
+        _original_init(self, *args, **kwargs)
+        self._model_id = "gpt-4.1-200K"
 
     async def _patched_create_run_options(
         self,
@@ -178,5 +184,6 @@ def patch_azure_ai_client():
 
     
     # Apply the patch
+    AzureAIAgentClient.__init__ = _patched_init
     AzureAIAgentClient._create_run_options = _patched_create_run_options
     print("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
