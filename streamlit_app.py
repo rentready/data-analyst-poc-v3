@@ -121,43 +121,9 @@ def main():
         async with (
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
-            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
+            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=await project_client.agents.threads.create()) as client,
         ):
-            thread_id = project_client.agents.threads.create()
-            knowledge_collector_agent = client.create_agent(
-                thread_id = thread_id,
-                name="knowledge_collector",
-                description="Database schema explorer and data discovery specialist. Examines available data sources, tables, fields, and samples actual data to understand structure before any query is written.",
-                instructions="""You are a DATA DISCOVERY SPECIALIST - the first step in any data analysis workflow.
-
-YOUR ROLE:
-- Explore available databases, tables, and collections using MCP tools
-- Examine schemas to understand field names, data types, and relationships  
-- Sample actual data to verify assumptions about structure and content
-- Document findings to inform SQL query development
-
-YOUR METHODOLOGY:
-1. List available data sources and tables (use MCP list/exploration tools)
-2. For relevant tables, examine their schemas (field names, types, keys)
-3. Pull small samples of actual data to understand values and formats
-4. Identify potential joins, relationships, and filtering options
-5. Document findings clearly for the SQL builder
-
-CRITICAL RULES:
-- ALWAYS examine actual data before making assumptions
-- Use MCP tools extensively - don't guess what exists
-- Sample data from multiple tables if needed for joins
-- Note any data quality issues, nulls, or unexpected formats
-- Be thorough - better to over-explore than under-explore""",
-                tools=[
-                    mcp_tool_with_approval,
-                    get_time
-                ],
-                additional_instructions="Use MCP tools aggressively to explore the database. Look at tool descriptions carefully to understand what each tool does. Don't proceed until you have concrete findings about table structures and field names.",
-            )
-
-            sql_builder_agent = client.create_agent(
-                thread_id = thread_id,
+            sql_builder_agent = ChatAgent(
                 name="sql_builder",
                 description="SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions.",
                 instructions="""You are a SQL QUERY BUILDER - you craft precise, efficient SQL queries.
@@ -190,7 +156,7 @@ QUERY BEST PRACTICES:
 - Use proper JOIN syntax with ON conditions
 - Consider NULL handling and data types
 - Test logic mentally before finalizing""",
-                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
+                chat_client=client,
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -198,8 +164,7 @@ QUERY BEST PRACTICES:
                 additional_instructions="You may use MCP tools to double-check schema details if needed, but primarily rely on information from knowledge_collector. If field names or table structures are unclear, explicitly state what you need clarified.",
             )
 
-            sql_validtor_agent = client.create_agent(
-                thread_id = thread_id,
+            sql_validtor_agent = ChatAgent(
                 name="sql_validator",
                 description="SQL query validation and quality assurance specialist. Validates queries for syntax, semantic correctness, field existence, and logical soundness before execution.",
                 instructions="""You are a SQL VALIDATION SPECIALIST - you ensure queries are correct before execution.
@@ -238,7 +203,7 @@ IMPORTANT:
 - Use ALL available MCP validation tools
 - Don't approve a query unless you've actually validated it with tools
 - Be thorough - a bad query wastes everyone's time""",
-                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
+                chat_client=client,
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -246,8 +211,7 @@ IMPORTANT:
                 additional_instructions="ALWAYS use MCP validation tools before approving any query. Check for sql_validate, schema_check, or similar validation tools in the MCP toolset. If no validation tools are available, manually verify against schema information from knowledge_collector.",
             )
 
-            data_extractor_agent = client.create_agent(
-                thread_id = thread_id,
+            data_extractor_agent = ChatAgent(
                 name="data_extractor",
                 description="Data extraction and results formatting specialist. Executes validated SQL queries, retrieves data, and presents results in a clear, actionable format.",
                 instructions="""You are a DATA EXTRACTION SPECIALIST - you execute queries and deliver results.
@@ -293,7 +257,7 @@ IMPORTANT:
 - Don't execute unvalidated queries
 - Don't truncate results without mentioning it
 - Don't hide errors - report them clearly""",
-                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
+                chat_client=client,
                 tools=[
                     mcp_tool_with_approval,
                     get_time
@@ -359,7 +323,7 @@ IMPORTANT:
 
             workflow = (
                 MagenticBuilder()
-                .participants(knowledge_collector = knowledge_collector_agent, sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
+                .participants(sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
                 .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                 .with_standard_manager(
                     chat_client=OpenAIChatClient(**client_params),
@@ -367,7 +331,6 @@ IMPORTANT:
                     instructions="""You are the LEAD DATA ANALYST orchestrating a team of specialists.
 
 Your team follows a professional data analysis workflow:
-1. DISCOVERY - knowledge_collector explores database schemas and samples data
 2. QUERY DESIGN - sql_builder creates queries based on actual schema found
 3. VALIDATION - sql_validator verifies queries are correct before execution  
 4. EXECUTION - data_extractor runs validated queries and retrieves results

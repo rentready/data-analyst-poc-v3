@@ -11,27 +11,15 @@ Before we begin, let's understand what we know and what we need to find out. Ple
     1. DATA REQUIREMENTS - What specific data points, metrics, or insights are being requested?
        List any explicit requirements mentioned in the request.
     
-    2. DATABASE EXPLORATION NEEDED - What do we need to discover about the database?
-       - Which tables/collections might contain relevant data?
-       - What schemas, fields, or relationships need to be examined?
-       - What samples of data should we look at?
-    
-    3. TECHNICAL CONSTRAINTS - What constraints or requirements are there?
+    2. TECHNICAL CONSTRAINTS - What constraints or requirements are there?
        - Time periods, filters, aggregations mentioned
        - Specific entities (IDs, names, categories) referenced
        - Any performance or format requirements
-    
-    4. ASSUMPTIONS & VALIDATION NEEDED - What assumptions might we need to make?
-       - Field mappings that need verification
-       - Data quality checks required
-       - Edge cases to consider
 
 Your answer MUST use EXACTLY these headings:
 
     1. DATA REQUIREMENTS
-    2. DATABASE EXPLORATION NEEDED
-    3. TECHNICAL CONSTRAINTS
-    4. ASSUMPTIONS & VALIDATION NEEDED
+    2. TECHNICAL CONSTRAINTS
 
 DO NOT include any other headings or sections. DO NOT suggest plans or next steps yet.
 """
@@ -45,10 +33,9 @@ We have assembled the following team:
 Based on the requirements analysis, create a step-by-step plan following professional data analyst methodology:
 
 TYPICAL DATA ANALYST WORKFLOW:
-1. **Discovery Phase** - Use Facts collector to explore available data sources, examine schemas, check sample data
-2. **Query Design** - Use Sql Generator to build queries based on actual schema (not assumptions)
-3. **Validation** - Use Sql Validator to verify query correctness, field names, join logic
-4. **Execution** - Use Data Extractor to run validated queries and retrieve results
+]. **Query Design** - Use Sql Generator to build queries based on actual schema (not assumptions)
+1. **Validation** - Use Sql Validator to verify query correctness, field names, join logic
+3. **Execution** - Use Data Extractor to run validated queries and retrieve results
 
 Your plan should:
 - Be specific about what each team member will do
@@ -110,9 +97,7 @@ Here is the current requirements analysis:
 
 Provide the UPDATED requirements analysis using the same headings:
     1. DATA REQUIREMENTS
-    2. DATABASE EXPLORATION NEEDED
-    3. TECHNICAL CONSTRAINTS
-    4. ASSUMPTIONS & VALIDATION NEEDED
+    2. TECHNICAL CONSTRAINTS
 """
 
 ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT = """We need to adjust our data analysis approach.
@@ -215,7 +200,6 @@ DATA ANALYSIS REQUEST:
 The data analysis is complete.
 
 The above conversation shows the work performed by the data analyst team:
-- Database exploration and schema discovery
 - SQL query development
 - Query validation
 - Data extraction
