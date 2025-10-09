@@ -121,7 +121,7 @@ def main():
         async with (
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
-            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
+            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], env_file_path = ".env") as client,
         ):
             thread_id = project_client.agents.threads.create()
             knowledge_collector_agent = client.create_agent(
