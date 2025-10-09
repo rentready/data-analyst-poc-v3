@@ -121,10 +121,11 @@ def main():
         async with (
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
-            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], env_file_path = ".env") as client,
+            AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
         ):
             thread_id = project_client.agents.threads.create()
             knowledge_collector_agent = client.create_agent(
+                agent_id = "asst_MSvBqGW2PW5exvxpViko0i0m",
                 thread_id = thread_id,
                 name="knowledge_collector",
                 description="Database schema explorer and data discovery specialist. Examines available data sources, tables, fields, and samples actual data to understand structure before any query is written.",
@@ -157,6 +158,7 @@ CRITICAL RULES:
             )
 
             sql_builder_agent = client.create_agent(
+                agent_id = "asst_MSvBqGW2PW5exvxpViko0i0m",
                 thread_id = thread_id,
                 name="sql_builder",
                 description="SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions.",
@@ -199,6 +201,7 @@ QUERY BEST PRACTICES:
             )
 
             sql_validtor_agent = client.create_agent(
+                agent_id = "asst_MSvBqGW2PW5exvxpViko0i0m",
                 thread_id = thread_id,
                 name="sql_validator",
                 description="SQL query validation and quality assurance specialist. Validates queries for syntax, semantic correctness, field existence, and logical soundness before execution.",
@@ -247,6 +250,7 @@ IMPORTANT:
             )
 
             data_extractor_agent = client.create_agent(
+                agent_id = "asst_MSvBqGW2PW5exvxpViko0i0m",
                 thread_id = thread_id,
                 name="data_extractor",
                 description="Data extraction and results formatting specialist. Executes validated SQL queries, retrieves data, and presents results in a clear, actionable format.",
