@@ -16,6 +16,15 @@ from azure.identity.aio import DefaultAzureCredential
 from agent_framework.azure import AzureAIAgentClient
 from datetime import datetime, timezone
 from azure.ai.projects.aio import AIProjectClient
+from src.magnetic_prompts import (
+    ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
+    ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
+    ORCHESTRATOR_TASK_LEDGER_FULL_PROMPT,
+    ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT,
+    ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
+    ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
+    ORCHESTRATOR_FINAL_ANSWER_PROMPT
+)
 from agent_framework import (
     ChatAgent,
     HostedCodeInterpreterTool,
@@ -217,6 +226,16 @@ def main():
                 .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                 .with_standard_manager(
                     chat_client=OpenAIChatClient(**client_params),
+                    
+                    instructions="You are a data analyst and you will respond to the user's question based on the knowledge collected and the data extracted.",
+                    task_ledger_facts_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
+                    task_ledger_plan_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
+                    task_ledger_full_prompt=ORCHESTRATOR_TASK_LEDGER_FULL_PROMPT,
+                    task_ledger_facts_update_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT,
+                    task_ledger_plan_update_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
+                    progress_ledger_prompt=ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
+                    final_answer_prompt=ORCHESTRATOR_FINAL_ANSWER_PROMPT,
+
                     max_round_count=10,
                     max_stall_count=3,
                     max_reset_count=2,
