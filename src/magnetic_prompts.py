@@ -1,120 +1,191 @@
-# region Magentic One Prompts
+# region Data Analyst Specialized Prompts
 
-ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT = """Below I will present you a request.
+ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT = """You are a professional data analyst working on a data request.
 
-Before we begin addressing the request, please answer the following pre-survey to the best of your ability.
-Keep in mind that you are Ken Jennings-level with trivia, and Mensa-level with puzzles, so there should be
-a deep well to draw from.
-
-Here is the request:
+Below is the user's request:
 
 {task}
 
-Here is the pre-survey:
+Before we begin, let's understand what we know and what we need to find out. Please analyze the request and provide:
 
-    1. Please list any specific facts or figures that are GIVEN in the request itself. It is possible that
-       there are none.
-    2. Please list any facts that may need to be looked up, and WHERE SPECIFICALLY they might be found.
-       In some cases, authoritative sources are mentioned in the request itself.
-    3. Please list any facts that may need to be derived (e.g., via logical deduction, simulation, or computation)
-    4. Please list any facts that are recalled from memory, hunches, well-reasoned guesses, etc.
+    1. DATA REQUIREMENTS - What specific data points, metrics, or insights are being requested?
+       List any explicit requirements mentioned in the request.
+    
+    2. DATABASE EXPLORATION NEEDED - What do we need to discover about the database?
+       - Which tables/collections might contain relevant data?
+       - What schemas, fields, or relationships need to be examined?
+       - What samples of data should we look at?
+    
+    3. TECHNICAL CONSTRAINTS - What constraints or requirements are there?
+       - Time periods, filters, aggregations mentioned
+       - Specific entities (IDs, names, categories) referenced
+       - Any performance or format requirements
+    
+    4. ASSUMPTIONS & VALIDATION NEEDED - What assumptions might we need to make?
+       - Field mappings that need verification
+       - Data quality checks required
+       - Edge cases to consider
 
-When answering this survey, keep in mind that "facts" will typically be specific names, dates, statistics, etc.
-Your answer should use headings:
+Your answer MUST use EXACTLY these headings:
 
-    1. GIVEN OR VERIFIED FACTS
-    2. FACTS TO LOOK UP
-    3. FACTS TO DERIVE
-    4. EDUCATED GUESSES
+    1. DATA REQUIREMENTS
+    2. DATABASE EXPLORATION NEEDED
+    3. TECHNICAL CONSTRAINTS
+    4. ASSUMPTIONS & VALIDATION NEEDED
 
-DO NOT include any other headings or sections in your response. DO NOT list next steps or plans until asked to do so.
+DO NOT include any other headings or sections. DO NOT suggest plans or next steps yet.
 """
 
-ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT = """Fantastic. To address this request we have assembled the following team:
+ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT = """Good. Now let's create a data analysis plan.
+
+We have assembled the following team:
 
 {team}
 
-Based on the team composition, and known and unknown facts, please devise a short bullet-point plan for addressing the
-original request. Remember, there is no requirement to involve all team members. A team member's particular expertise
-may not be needed for this task.
+Based on the requirements analysis, create a step-by-step plan following professional data analyst methodology:
+
+TYPICAL DATA ANALYST WORKFLOW:
+1. **Discovery Phase** - Use Facts collector to explore available data sources, examine schemas, check sample data
+2. **Query Design** - Use Sql Generator to build queries based on actual schema (not assumptions)
+3. **Validation** - Use Sql Validator to verify query correctness, field names, join logic
+4. **Execution** - Use Data Extractor to run validated queries and retrieve results
+
+Your plan should:
+- Be specific about what each team member will do
+- Reference actual tools available (MCP tools for database access)
+- Include validation steps before executing queries
+- Emphasize examining real data before making assumptions
+- Only involve team members whose expertise is actually needed
+
+Provide a concise bullet-point plan.
 """
 
 # Added to render the ledger in a single assistant message, mirroring the original behavior.
 ORCHESTRATOR_TASK_LEDGER_FULL_PROMPT = """
-We are working to address the following user request:
+We are working on the following DATA ANALYSIS REQUEST:
 
 {task}
 
 
-To answer this request we have assembled the following team:
+Our DATA ANALYST TEAM:
 
 {team}
 
 
-Here is an initial fact sheet to consider:
+REQUIREMENTS ANALYSIS:
 
 {facts}
 
 
-Here is the plan to follow as best as possible:
+DATA ANALYSIS PLAN:
 
 {plan}
+
+
+IMPORTANT REMINDERS:
+- Always examine actual database schemas and sample data before writing queries
+- Validate all queries before execution
+- Use MCP tools to explore data sources and validate assumptions
+- Don't guess field names or table structures - look them up
 """
 
-ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT = """As a reminder, we are working to solve the following task:
+ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT = """As a reminder, we are working on this DATA ANALYSIS REQUEST:
 
 {task}
 
-It is clear we are not making as much progress as we would like, but we may have learned something new.
-Please rewrite the following fact sheet, updating it to include anything new we have learned that may be helpful.
+We've made some progress but need to update our understanding based on what we've learned.
 
-Example edits can include (but are not limited to) adding new guesses, moving educated guesses to verified facts
-if appropriate, etc. Updates may be made to any section of the fact sheet, and more than one section of the fact
-sheet can be edited. This is an especially good time to update educated guesses, so please at least add or update
-one educated guess or hunch, and explain your reasoning.
+Please update the requirements analysis with any new information we've discovered:
 
-Here is the old fact sheet:
+WHAT TO UPDATE:
+- Move database exploration findings to verified requirements
+- Update field names, table structures we've confirmed
+- Add any data quality issues or constraints discovered
+- Refine assumptions based on actual data samples seen
+- Add technical details learned from MCP tools
+
+Here is the current requirements analysis:
 
 {old_facts}
+
+Provide the UPDATED requirements analysis using the same headings:
+    1. DATA REQUIREMENTS
+    2. DATABASE EXPLORATION NEEDED
+    3. TECHNICAL CONSTRAINTS
+    4. ASSUMPTIONS & VALIDATION NEEDED
 """
 
-ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT = """Please briefly explain what went wrong on this last run
-(the root cause of the failure), and then come up with a new plan that takes steps and includes hints to overcome prior
-challenges and especially avoids repeating the same mistakes. As before, the new plan should be concise, expressed in
-bullet-point form, and consider the following team composition:
+ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT = """We need to adjust our data analysis approach.
+
+First, briefly explain what went wrong:
+- What was the root cause of the issue?
+- Was it a query error, missing data exploration, incorrect assumptions, or validation failure?
+
+Then create a NEW PLAN that:
+- Addresses the specific problem identified
+- Includes more thorough data exploration if assumptions were wrong
+- Adds validation steps if queries failed
+- Emphasizes using MCP tools to verify before proceeding
+- Avoids repeating the same mistakes
+
+Available team:
 
 {team}
+
+Common data analyst mistakes to avoid:
+- Writing queries without checking actual schema first
+- Assuming field names instead of looking them up
+- Skipping validation before execution
+- Not sampling data to understand structure
+
+Provide a concise bullet-point plan.
 """
 
 ORCHESTRATOR_PROGRESS_LEDGER_PROMPT = """
-Recall we are working on the following request:
+We are working on this DATA ANALYSIS REQUEST:
 
 {task}
 
-And we have assembled the following team:
+Our DATA ANALYST TEAM:
 
 {team}
 
-To make progress on the request, please answer the following questions, including necessary reasoning:
+Evaluate our progress following professional data analyst methodology:
 
-    - Is the request fully satisfied? (True if complete, or False if the original request has yet to be
-      SUCCESSFULLY and FULLY addressed)
-    - Are we in a loop where we are repeating the same requests and or getting the same responses as before?
-      Loops can span multiple turns, and can include repeated actions like scrolling up or down more than a
-      handful of times.
-    - Are we making forward progress? (True if just starting, or recent messages are adding value. False if recent
-      messages show evidence of being stuck in a loop or if there is evidence of significant barriers to success
-      such as the inability to read from a required file)
-    - Who should speak next? (select from: {names})
-    - What instruction or question would you give this team member? (Phrase as if speaking directly to them, and
-      include any specific information they may need)
+ANSWER THESE QUESTIONS:
 
-Please output an answer in pure JSON format according to the following schema. The JSON object must be parsable as-is.
-DO NOT OUTPUT ANYTHING OTHER THAN JSON, AND DO NOT DEVIATE FROM THIS SCHEMA:
+1. **Is the request fully satisfied?**
+   - Have we successfully extracted and returned the requested data?
+   - True only if we have actual data results that answer the user's question
+   - False if we're still exploring, building queries, or validating
+
+2. **Are we in a loop?**
+   - Are we repeating the same actions without new information?
+   - Are we making the same errors repeatedly?
+   - Are we stuck trying the same approach that keeps failing?
+
+3. **Are we making forward progress?**
+   - True if: exploring new data sources, validating queries, fixing errors based on feedback
+   - False if: repeating same mistakes, not using validation tools, ignoring error messages
+   - Consider the data analyst workflow: Discovery → Query Design → Validation → Execution
+
+4. **Who should speak next?** (select from: {names})
+   TYPICAL PROGRESSION:
+   - Start with **knowledge_collector** to explore database schema and sample data
+   - Then **sql_builder** to create queries based on actual schema found
+   - Then **sql_validator** to validate queries before execution
+   - Finally **data_extractor** to execute validated queries
+   
+5. **What specific instruction?**
+   - Be explicit about what to do and what tools to use
+   - Reference specific findings from previous steps
+   - Emphasize examining actual data before making assumptions
+   - For validators: specify what to check (syntax, field names, joins, etc.)
+
+Output ONLY valid JSON following this schema exactly:
 
 {{
     "is_request_satisfied": {{
-
         "reason": string,
         "answer": boolean
     }},
@@ -128,7 +199,7 @@ DO NOT OUTPUT ANYTHING OTHER THAN JSON, AND DO NOT DEVIATE FROM THIS SCHEMA:
     }},
     "next_speaker": {{
         "reason": string,
-        "answer": string (select from: {names})
+        "answer": string (must be one of: {names})
     }},
     "instruction_or_question": {{
         "reason": string,
@@ -138,13 +209,24 @@ DO NOT OUTPUT ANYTHING OTHER THAN JSON, AND DO NOT DEVIATE FROM THIS SCHEMA:
 """
 
 ORCHESTRATOR_FINAL_ANSWER_PROMPT = """
-We are working on the following task:
+DATA ANALYSIS REQUEST:
 {task}
 
-We have completed the task.
+The data analysis is complete.
 
-The above messages contain the conversation that took place to complete the task.
+The above conversation shows the work performed by the data analyst team:
+- Database exploration and schema discovery
+- SQL query development
+- Query validation
+- Data extraction
 
-Based on the information gathered, provide the final answer to the original request.
-The answer should be phrased as if you were speaking to the user.
+Based on the data gathered and analyzed, provide the final answer to the user's request.
+
+Your response should:
+- Present the key findings and data clearly
+- Include relevant metrics, counts, or aggregations discovered
+- Explain any important data quality notes or caveats
+- Be professional yet conversational, as if presenting analysis results to a stakeholder
+
+Format data in a clear, readable way (use tables, lists, or structured text as appropriate).
 """
