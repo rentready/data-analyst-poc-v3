@@ -61,7 +61,10 @@ def patch_azure_ai_client():
 
         if chat_options is not None:
             run_options["max_completion_tokens"] = chat_options.max_tokens
-            run_options["model"] = chat_options.model_id
+            if chat_options.model_id is not None:
+                run_options["model"] = chat_options.model_id
+            else:
+                run_options["model"] = self.model_id
             run_options["top_p"] = chat_options.top_p
             run_options["temperature"] = chat_options.temperature
             run_options["parallel_tool_calls"] = chat_options.allow_multiple_tool_calls
