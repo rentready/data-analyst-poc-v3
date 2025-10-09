@@ -163,6 +163,7 @@ QUERY BEST PRACTICES:
                         mcp_tool_with_approval,
                         get_time
                     ],
+                    conversation_id=created_thread.id,
                     additional_instructions="You may use MCP tools to double-check schema details if needed, but primarily rely on information from knowledge_collector. If field names or table structures are unclear, explicitly state what you need clarified.",
                 )
 
@@ -210,6 +211,7 @@ IMPORTANT:
                         mcp_tool_with_approval,
                         get_time
                     ],
+                    conversation_id=created_thread.id,
                     additional_instructions="ALWAYS use MCP validation tools before approving any query. Check for sql_validate, schema_check, or similar validation tools in the MCP toolset. If no validation tools are available, manually verify against schema information from knowledge_collector.",
                 )
 
@@ -264,6 +266,7 @@ IMPORTANT:
                         mcp_tool_with_approval,
                         get_time
                     ],
+                    conversation_id=created_thread.id,
                     additional_instructions="Use MCP tools to execute queries. Look for query execution, data retrieval, or similar tools. Present results in a format that's useful for the final answer. If execution fails, provide detailed error information for debugging.",
                 )
 
