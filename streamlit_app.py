@@ -123,7 +123,9 @@ def main():
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
             AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as client,
         ):
-            knowledge_collector_agent = ChatAgent(#client.create_agent(
+            thread_id = project_client.agents.threads.create()
+            knowledge_collector_agent = client.create_agent(
+                thread_id = thread_id,
                 name="knowledge_collector",
                 description="Database schema explorer and data discovery specialist. Examines available data sources, tables, fields, and samples actual data to understand structure before any query is written.",
                 instructions="""You are a DATA DISCOVERY SPECIALIST - the first step in any data analysis workflow.
@@ -152,10 +154,10 @@ CRITICAL RULES:
                     get_time
                 ],
                 additional_instructions="Use MCP tools aggressively to explore the database. Look at tool descriptions carefully to understand what each tool does. Don't proceed until you have concrete findings about table structures and field names.",
-                chat_client=OpenAIChatClient(**client_params)
             )
 
-            sql_builder_agent = ChatAgent(#client.create_agent(
+            sql_builder_agent = client.create_agent(
+                thread_id = thread_id,
                 name="sql_builder",
                 description="SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions.",
                 instructions="""You are a SQL QUERY BUILDER - you craft precise, efficient SQL queries.
@@ -188,15 +190,16 @@ QUERY BEST PRACTICES:
 - Use proper JOIN syntax with ON conditions
 - Consider NULL handling and data types
 - Test logic mentally before finalizing""",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
                 ],
                 additional_instructions="You may use MCP tools to double-check schema details if needed, but primarily rely on information from knowledge_collector. If field names or table structures are unclear, explicitly state what you need clarified.",
-                chat_client=OpenAIChatClient(**client_params)
             )
 
-            sql_validtor_agent = ChatAgent(#client.create_agent(
+            sql_validtor_agent = client.create_agent(
+                thread_id = thread_id,
                 name="sql_validator",
                 description="SQL query validation and quality assurance specialist. Validates queries for syntax, semantic correctness, field existence, and logical soundness before execution.",
                 instructions="""You are a SQL VALIDATION SPECIALIST - you ensure queries are correct before execution.
@@ -235,15 +238,16 @@ IMPORTANT:
 - Use ALL available MCP validation tools
 - Don't approve a query unless you've actually validated it with tools
 - Be thorough - a bad query wastes everyone's time""",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
                 ],
                 additional_instructions="ALWAYS use MCP validation tools before approving any query. Check for sql_validate, schema_check, or similar validation tools in the MCP toolset. If no validation tools are available, manually verify against schema information from knowledge_collector.",
-                chat_client=OpenAIChatClient(**client_params)
             )
 
-            data_extractor_agent = ChatAgent(#client.create_agent(
+            data_extractor_agent = client.create_agent(
+                thread_id = thread_id,
                 name="data_extractor",
                 description="Data extraction and results formatting specialist. Executes validated SQL queries, retrieves data, and presents results in a clear, actionable format.",
                 instructions="""You are a DATA EXTRACTION SPECIALIST - you execute queries and deliver results.
@@ -289,12 +293,12 @@ IMPORTANT:
 - Don't execute unvalidated queries
 - Don't truncate results without mentioning it
 - Don't hide errors - report them clearly""",
+                model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY],
                 tools=[
                     mcp_tool_with_approval,
                     get_time
                 ],
                 additional_instructions="Use MCP tools to execute queries. Look for query execution, data retrieval, or similar tools. Present results in a format that's useful for the final answer. If execution fails, provide detailed error information for debugging.",
-                chat_client=OpenAIChatClient(**client_params)
             )
 
             # Словари для хранения контейнеров и накопленного текста для каждого агента

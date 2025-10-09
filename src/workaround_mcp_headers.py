@@ -53,7 +53,8 @@ def patch_azure_ai_client():
     # Patched __init__ to add _needs_reset flag
     def _patched_init(self, *args, **kwargs):
         _original_init(self, *args, **kwargs)
-        self._model_id = "gpt-4.1-200K"
+        logger.info(f"MODEL BEFORE UPDATE {self.model_id}")
+        self.model_id = "gpt-4.1-200K"
 
     async def _patched_create_run_options(
         self,
