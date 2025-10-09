@@ -122,10 +122,23 @@ def main():
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
-            created_thread = await project_client.agents.threads.create()
-            logger.info(f"Created thread: {created_thread.id}")
-            async with AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=created_thread.id) as client:
-                sql_builder_agent = client.create_agent(
+            # Создаем отдельные threads для каждого агента
+            sql_builder_thread = await project_client.agents.threads.create()
+            sql_validator_thread = await project_client.agents.threads.create()
+            data_extractor_thread = await project_client.agents.threads.create()
+            
+            logger.info(f"Created threads:")
+            logger.info(f"  sql_builder: {sql_builder_thread.id}")
+            logger.info(f"  sql_validator: {sql_validator_thread.id}")
+            logger.info(f"  data_extractor: {data_extractor_thread.id}")
+            
+            # Создаем отдельные клиенты для каждого агента
+            async with (
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_builder_thread.id) as sql_builder_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
+            ):
+                sql_builder_agent = sql_builder_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="sql_builder",
                     description="SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions.",
@@ -163,11 +176,11 @@ QUERY BEST PRACTICES:
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=created_thread.id,
+                    conversation_id=sql_builder_thread.id,
                     additional_instructions="You may use MCP tools to double-check schema details if needed, but primarily rely on information from knowledge_collector. If field names or table structures are unclear, explicitly state what you need clarified.",
                 )
 
-                sql_validtor_agent = client.create_agent(
+                sql_validtor_agent = sql_validator_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="sql_validator",
                     description="SQL query validation and quality assurance specialist. Validates queries for syntax, semantic correctness, field existence, and logical soundness before execution.",
@@ -211,11 +224,11 @@ IMPORTANT:
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=created_thread.id,
+                    conversation_id=sql_validator_thread.id,
                     additional_instructions="ALWAYS use MCP validation tools before approving any query. Check for sql_validate, schema_check, or similar validation tools in the MCP toolset. If no validation tools are available, manually verify against schema information from knowledge_collector.",
                 )
 
-                data_extractor_agent = client.create_agent(
+                data_extractor_agent = data_extractor_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="data_extractor",
                     description="Data extraction and results formatting specialist. Executes validated SQL queries, retrieves data, and presents results in a clear, actionable format.",
@@ -266,7 +279,7 @@ IMPORTANT:
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=created_thread.id,
+                    conversation_id=data_extractor_thread.id,
                     additional_instructions="Use MCP tools to execute queries. Look for query execution, data retrieval, or similar tools. Present results in a format that's useful for the final answer. If execution fails, provide detailed error information for debugging.",
                 )
 
