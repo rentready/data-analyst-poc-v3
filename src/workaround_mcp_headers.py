@@ -7,7 +7,6 @@ from typing import Any
 from collections.abc import MutableMapping, Sequence
 from agent_framework.azure import AzureAIAgentClient
 from collections.abc import MutableMapping, MutableSequence
-from agent_framework.exceptions import ServiceInitializationError
 
 from agent_framework import (
     ChatMessage,
@@ -19,7 +18,6 @@ from agent_framework import (
     Role,
     TextContent,
     ToolMode,
-    ToolProtocol,
     UriContent,
 )
 
@@ -27,8 +25,6 @@ from azure.ai.agents.models import (
     AgentsNamedToolChoice,
     AgentsNamedToolChoiceType,
     AgentsToolChoiceOptionMode,
-    AsyncAgentEventHandler,
-    AsyncAgentRunStream,
     FunctionName,
     MessageImageUrlParam,
     MessageInputContentBlock,
@@ -180,45 +176,7 @@ def patch_azure_ai_client():
             run_options["instructions"] = "".join(instructions)
 
         return run_options, required_action_results
-
-    async def _patched_get_agent_id_or_create(self, run_options: dict[str, Any] | None = None) -> str:
-        """Determine which agent to use and create if needed.
-
-        Returns:
-            str: The agent_id to use
-        """
-        run_options = run_options or {}
-        # If no agent_id is provided, create a temporary agent
-        if self.agent_id is None:
-            logger.info("Creating a temporary agent")
-            logger.info(f"Run options: {run_options}")
-            if "model" not in run_options or not run_options["model"]:
-                raise ServiceInitializationError(
-                    "Model deployment name is required for agent creation, "
-                    "can also be passed to the get_response methods."
-                )
-
-            agent_name: str = self.agent_name or "UnnamedAgent"
-            args: dict[str, Any] = {
-                "model": run_options["model"],
-                "name": agent_name,
-            }
-            if "tools" in run_options:
-                args["tools"] = run_options["tools"]
-            if "tool_resources" in run_options:
-                args["tool_resources"] = run_options["tool_resources"]
-            if "instructions" in run_options:
-                args["instructions"] = run_options["instructions"]
-            if "response_format" in run_options:
-                args["response_format"] = run_options["response_format"]
-            created_agent = await self.project_client.agents.create_agent(**args)
-            self.agent_id = str(created_agent.id)
-            self._agent_definition = created_agent
-            self._should_delete_agent = True
-
-        return self.agent_id
     
     # Apply the patch
     AzureAIAgentClient._create_run_options = _patched_create_run_options
-    AzureAIAgentClient._get_agent_id_or_create = _patched_get_agent_id_or_create
     print("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
