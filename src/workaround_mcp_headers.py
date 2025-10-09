@@ -80,6 +80,7 @@ def patch_azure_ai_client():
 
                             # Add headers if present
                             if mcp_tool.headers:
+                                print(f"Adding headers to MCP tool: {mcp_tool.headers}")
                                 mcp_resource["headers"] = mcp_tool.headers
 
                             if mcp_tool.approval_mode is not None:
