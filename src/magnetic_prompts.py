@@ -33,7 +33,7 @@ We have assembled the following team:
 Based on the requirements analysis, create a step-by-step plan following professional data analyst methodology:
 
 TYPICAL DATA ANALYST WORKFLOW:
-]. **Query Design** - Use Sql Generator to build queries based on actual schema (not assumptions)
+]. **Query Design** - Use Sql Builder to build queries based on actual schema (not assumptions)
 1. **Validation** - Use Sql Validator to verify query correctness, field names, join logic
 3. **Execution** - Use Data Extractor to run validated queries and retrieve results
 
@@ -70,7 +70,6 @@ DATA ANALYSIS PLAN:
 
 
 IMPORTANT REMINDERS:
-- Always examine actual database schemas and sample data before writing queries
 - Validate all queries before execution
 - Use MCP tools to explore data sources and validate assumptions
 - Don't guess field names or table structures - look them up

@@ -1,18 +1,7 @@
 """Agent and orchestrator instructions for the data analyst workflow."""
 
 # SQL Builder Agent Instructions
-SQL_BUILDER_INSTRUCTIONS = """You have access to MCP tools that can query the RentReady SQL Server database. The database contains:
-- Work orders (msdyn_workorder table) with dates, status, service accounts
-- Job profiles (rr_jobprofile table) linked to work orders  
-- Invoices (invoice table) with billing information
-- Accounts (account table) for properties and customers
-- Work order services (msdyn_workorderservice table) with service details
-
-YOUR TASK - BUILD THE QUERY NOW:
-1. Analyze the user's question
-2. Determine which table(s) you need (work orders, invoices, job profiles, etc.)
-3. BUILD a preliminary SQL query using read_data or find_* MCP tools
-4. Include appropriate filters (dates, status, etc.)
+SQL_BUILDER_INSTRUCTIONS = """You have access to MCP tools that can query the database. 
 
 IMPORTANT RULES:
 - DO NOT ask the user for more information - you have enough to start
@@ -26,9 +15,21 @@ EXAMPLE: If user asks "How many work orders in September 2024?", you should:
 - Filter by date_from="2024-09-01" and date_to="2024-09-30"
 - Count the results
 
-NOW BUILD THE PRELIMINARY QUERY for the user's question above. Show the query/tool call and explain your reasoning."""
+NOW BUILD THE PRELIMINARY QUERY for the user's question above. 
 
-SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = "You may use MCP tools to double-check schema details if needed, but primarily rely on information from knowledge_collector. If field names or table structures are unclear, explicitly state what you need clarified."
+IMPORTANT: Your final message must contain an SQL query and reasoning."""
+
+SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """CRITICAL: Your FINAL message must contain ONLY the SQL query or MCP tool call parameters - NO explanations, NO reasoning text.
+
+During your work you can explain your thinking, but when you're done:
+- If you used an MCP tool (read_data, find_work_orders, etc.) - your final message should show ONLY the tool call with parameters
+- If you wrote raw SQL - your final message should be ONLY the SQL query in a code block
+
+Example final messages:
+GOOD: "```sql\nSELECT COUNT(*) FROM msdyn_workorder WHERE createdon >= '2024-09-01' AND createdon < '2024-10-01'\n```"
+BAD: "I've analyzed the request and here's the query I built: SELECT... This query will help us find..."
+
+You may use MCP tools to double-check schema details if needed. If field names or table structures are unclear during your work, state what you need clarified, but still end with the actual query/tool call."""
 
 SQL_BUILDER_DESCRIPTION = "SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions."
 

@@ -81,7 +81,9 @@ def patch_magentic_for_event_interception():
                                     await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, RunStepDeltaChunk):
-                            logger.debug(f"   📝 RunStepDelta detected")
+                            logger.info(f"   📝 RunStepDelta detected")
+                        else:
+                            logger.info(f"   📝 Unknown event type: {type(raw)}")
                     
                     except ImportError:
                         # Azure AI not available, skip
