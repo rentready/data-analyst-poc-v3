@@ -115,7 +115,21 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
                         pass;
                     elif isinstance(tc, RunStepMcpToolCall):
                         st.write(f"  #{i+1} **MCP Result:** `{tc.server_label}.{tc.name}`")
+                        
+                        # Выводим аргументы (входные параметры)
+                        if hasattr(tc, 'arguments') and tc.arguments:
+                            st.write("  **Arguments:**")
+                            try:
+                                if isinstance(tc.arguments, str):
+                                    st.json(json.loads(tc.arguments))
+                                else:
+                                    st.json(tc.arguments)
+                            except (json.JSONDecodeError, TypeError, AttributeError):
+                                st.code(str(tc.arguments))
+                        
+                        # Выводим output (результат)
                         if hasattr(tc, 'output') and tc.output:
+                            st.write("  **Output:**")
                             # Пытаемся отобразить как JSON, если не получается - как текст
                             try:
                                 if isinstance(tc.output, str):
