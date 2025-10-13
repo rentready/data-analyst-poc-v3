@@ -9,7 +9,6 @@ from agent_framework import AgentRunResponseUpdate
 
 logger = logging.getLogger(__name__)
 
-global_unified_callback: CallbackSink | None = None
 global_runstep_callback = None  # Callable[[str, RunStep], Awaitable[None]]
 
 def patch_magentic_for_event_interception():

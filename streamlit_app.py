@@ -91,7 +91,7 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
 
         if run_step.type != RunStepType.TOOL_CALLS or run_step.status != RunStepStatus.COMPLETED:
             return
-            
+
         st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
         
         if hasattr(run_step, 'step_details'):
@@ -112,15 +112,7 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
                         except (json.JSONDecodeError, TypeError, AttributeError):
                             st.code(str(tc.mcp.arguments))
                     elif isinstance(tc, RequiredFunctionToolCall):
-                        st.write(f"  #{i+1} **Function:** `{tc.function.name}`")
-                        # Arguments могут быть строкой или объектом
-                        try:
-                            if isinstance(tc.function.arguments, str):
-                                st.json(json.loads(tc.function.arguments))
-                            else:
-                                st.json(tc.function.arguments)
-                        except (json.JSONDecodeError, TypeError, AttributeError):
-                            st.code(str(tc.function.arguments))
+                        pass;
                     elif isinstance(tc, RunStepMcpToolCall):
                         st.write(f"  #{i+1} **MCP Result:** `{tc.server_label}.{tc.name}`")
                         if hasattr(tc, 'output') and tc.output:
@@ -130,7 +122,7 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
                                     parsed = json.loads(tc.output)
                                     st.json(parsed)
                                 else:
-                                    st.json(tc.oxxutput)
+                                    st.json(tc.output)
                             except (json.JSONDecodeError, TypeError):
                                 st.code(str(tc.output))
                     else:
