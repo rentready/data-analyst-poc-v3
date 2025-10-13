@@ -33,12 +33,19 @@ We have assembled the following team:
 Based on the requirements analysis, create a step-by-step plan following professional data analyst methodology:
 
 TYPICAL DATA ANALYST WORKFLOW:
-]. **Query Design** - Use Sql Builder to build queries based on actual schema (not assumptions)
-1. **Validation** - Use Sql Validator to verify query correctness, field names, join logic
-3. **Execution** - Use Data Extractor to run validated queries and retrieve results
+1. **Query Design** - Sql Builder builds query, validates presense of every field and table by queries TOP 1 using MCP Tools.
+2. **Validation** - Sql Validator receives the SQL, validates it, and returns IMPROVED SQL with feedback/comments
+3. **Execution** - Data Extractor receives the validated SQL and executes it
+
+CRITICAL SQL HANDOFF REQUIREMENTS:
+- Sql Builder MUST output pure SQL (no explanations) as final message
+- Sql Validator MUST receive that SQL, validate it, and return improved SQL with comments
+- Data Extractor MUST receive the validated SQL to execute
+- Each agent receives SQL from previous agent and outputs improved version
 
 Your plan should:
 - Be specific about what each team member will do
+- Explicitly mention SQL handoff between agents
 - Reference actual tools available (MCP tools for database access)
 - Include validation steps before executing queries
 - Emphasize examining real data before making assumptions
@@ -73,6 +80,12 @@ IMPORTANT REMINDERS:
 - Validate all queries before execution
 - Use MCP tools to explore data sources and validate assumptions
 - Don't guess field names or table structures - look them up
+
+CRITICAL SQL HANDOFF PROTOCOL:
+- sql_builder outputs ONLY pure SQL (no explanations)
+- sql_validator receives SQL, validates, returns IMPROVED SQL with feedback
+- data_extractor receives validated SQL and executes it
+- Always pass SQL explicitly between agents in your instructions
 """
 
 ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT = """As a reminder, we are working on this DATA ANALYSIS REQUEST:
@@ -154,17 +167,21 @@ ANSWER THESE QUESTIONS:
    - Consider the data analyst workflow: Discovery → Query Design → Validation → Execution
 
 4. **Who should speak next?** (select from: {names})
-   TYPICAL PROGRESSION:
-   - Start with **knowledge_collector** to explore database schema and sample data
-   - Then **sql_builder** to create queries based on actual schema found
-   - Then **sql_validator** to validate queries before execution
-   - Finally **data_extractor** to execute validated queries
+   TYPICAL PROGRESSION & SQL HANDOFF:
+   - **sql_builder** creates query → outputs ONLY pure SQL (no explanations)
+   - **sql_validator** receives that SQL → validates and returns IMPROVED SQL with feedback/comments
+   - **data_extractor** receives validated SQL → executes it and returns results
+   
+   CRITICAL: When calling the next agent, always reference the SQL from the previous agent!
    
 5. **What specific instruction?**
    - Be explicit about what to do and what tools to use
+   - **ALWAYS include the SQL** from previous agent's output in your instruction
+   - For sql_builder: "Build a query and return ONLY the SQL"
+   - For sql_validator: "Here is the SQL: [paste SQL]. Validate it and return improved SQL with comments"
+   - For data_extractor: "Here is the validated SQL: [paste SQL]. Execute it and return results"
    - Reference specific findings from previous steps
    - Emphasize examining actual data before making assumptions
-   - For validators: specify what to check (syntax, field names, joins, etc.)
 
 Output ONLY valid JSON following this schema exactly:
 
@@ -203,13 +220,7 @@ The above conversation shows the work performed by the data analyst team:
 - Query validation
 - Data extraction
 
-Based on the data gathered and analyzed, provide the final answer to the user's request.
-
-Your response should:
-- Present the key findings and data clearly
-- Include relevant metrics, counts, or aggregations discovered
-- Explain any important data quality notes or caveats
-- Be professional yet conversational, as if presenting analysis results to a stakeholder
+Based on the data gathered and analyzed, provide the data extracted results.
 
 Format data in a clear, readable way (use tables, lists, or structured text as appropriate).
 """

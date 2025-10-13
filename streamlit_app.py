@@ -93,6 +93,9 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
             return
 
         st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
+
+        if run_step.status == RunStepStatus.FAILED:
+            st.error(f"{run_step}")
         
         if hasattr(run_step, 'step_details'):
             details = run_step.step_details
