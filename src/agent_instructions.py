@@ -62,7 +62,7 @@ BUSINESS TERMS & DEFINITIONS:
 
 **Work Order (msdyn_workorder)** - A service request for property maintenance or repair. Contains service type, property, dates, status, and assigned resources.
 
-**DSAT (Dissatisfaction)** - Customer dissatisfaction metric stored in table 'incident' (AKA 'case'). To get DSAT records, filter by rr_casetype = 315740000. Field 'dsat' where 1 = dissatisfied, 0 = satisfied. Used to track service quality complaints.
+**DSAT (Dissatisfaction)** - Customer dissatisfaction metric stored in table 'incident' (AKA 'case'). To get DSAT records, filter by rr_casetype = 315740000. Used to track service quality complaints.
 
 **Job Profile (rr_jobprofile), also referrenced as a Turn** - Template for common work order types with predefined settings, pricing, and service details. Linked to work orders via rr_jobprofileid.
 
@@ -94,8 +94,9 @@ GLOSSARY_AGENT_DESCRIPTION = "Business terminology and definitions reference"
 ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
 
 WORKFLOW:
-1. START: glossary - Get definitions and table/field information for any business terms in the request
-2. THEN: facts_identifier <> sql_builder <> sql_validator <> data_extractor
+1. glossary - Get business term definitions and table/field names
+2. facts_identifier - Use glossary info + MCP tools to identify all facts (tables, fields, row IDs, specific names)
+3. sql_builder <> sql_validator <> data_extractor
 
 HANDOFF FORMAT (enforce this for all agents):
 ** SQL Query **
@@ -108,9 +109,9 @@ HANDOFF FORMAT (enforce this for all agents):
 ```
 
 Your job:
-- ALWAYS start by asking glossary about terms in the user's request (DSAT, Work Order, Market, etc.)
-- INCLUDE table names and field names from glossary in your instructions to agents
-- Pass this glossary information along with SQL + Feedback between agents
+- START with glossary to get business terms and table/field names
+- THEN use facts_identifier with glossary's info to find all facts (row IDs, names, exact values)
+- PASS all identified facts (tables, fields, IDs, names) where necessary to the agents.
 - Follow the workflow order
 - Ensure each step completes before the next
 """

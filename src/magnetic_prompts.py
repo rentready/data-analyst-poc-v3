@@ -33,12 +33,14 @@ We have assembled the following team:
 Based on the requirements analysis, create a step-by-step plan.
 
 WORKFLOW ORDER:
-1. START with glossary - get term definitions and table/field locations
-2. THEN proceed with data analysis: facts_identifier → sql_builder → sql_validator → data_extractor
+1. glossary - Get business term definitions and table/field names
+2. facts_identifier - Use glossary info + MCP tools to identify all facts (tables, fields, row IDs, names)
+3. sql_builder → sql_validator → data_extractor
 
 Your plan should:
-- Start with glossary to clarify business terms and get table/field names
-- Include specific table and field names from glossary in agent instructions
+- Start with glossary to get business terms and table/field names
+- Use facts_identifier to find all specific facts (IDs, names, values)
+- Pass all identified facts to sql_builder
 - Specify which agents are needed and in what order
 - Be specific about what each agent will do
 
@@ -101,14 +103,16 @@ ANSWER THESE QUESTIONS:
 3. **Are we making forward progress?**
 
 4. **Who should speak next?** (select from: {names})
-   - START with glossary to get term definitions and table/field info
-   - THEN proceed: facts_identifier → sql_builder → sql_validator → data_extractor
+   WORKFLOW:
+   1. glossary - Get business terms and table/field names
+   2. facts_identifier - Use glossary info + MCP tools to find all facts (IDs, names, values)
+   3. sql_builder → sql_validator → data_extractor
    
 5. **What specific instruction?**
    - For glossary: Ask about business terms in the request
-   - For other agents: 
-     * INCLUDE table names and field names from glossary's response
-     * Include relevant context from previous agent's output
+   - For facts_identifier: Give glossary's table/field info + ask to find specific facts (IDs, names, values) using MCP tools
+   - For sql_builder: Provide all identified facts (tables, fields, IDs, names) from glossary + facts_identifier
+   - For other agents: Include relevant context from previous outputs
    - Be specific about what the next agent should do
 
 Output ONLY valid JSON:
