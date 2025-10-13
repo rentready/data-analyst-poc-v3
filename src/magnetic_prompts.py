@@ -32,7 +32,13 @@ We have assembled the following team:
 
 Based on the requirements analysis, create a step-by-step plan.
 
+WORKFLOW ORDER:
+1. START with glossary - get term definitions and table/field locations
+2. THEN proceed with data analysis: facts_identifier → sql_builder → sql_validator → data_extractor
+
 Your plan should:
+- Start with glossary to clarify business terms and get table/field names
+- Include specific table and field names from glossary in agent instructions
 - Specify which agents are needed and in what order
 - Be specific about what each agent will do
 
@@ -95,9 +101,14 @@ ANSWER THESE QUESTIONS:
 3. **Are we making forward progress?**
 
 4. **Who should speak next?** (select from: {names})
+   - START with glossary to get term definitions and table/field info
+   - THEN proceed: facts_identifier → sql_builder → sql_validator → data_extractor
    
 5. **What specific instruction?**
-   - Include relevant context from previous agent's output
+   - For glossary: Ask about business terms in the request
+   - For other agents: 
+     * INCLUDE table names and field names from glossary's response
+     * Include relevant context from previous agent's output
    - Be specific about what the next agent should do
 
 Output ONLY valid JSON:

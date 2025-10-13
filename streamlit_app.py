@@ -35,6 +35,9 @@ from src.agent_instructions import (
     DATA_EXTRACTOR_INSTRUCTIONS,
     DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
     DATA_EXTRACTOR_DESCRIPTION,
+    GLOSSARY_AGENT_INSTRUCTIONS,
+    GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
+    GLOSSARY_AGENT_DESCRIPTION,
     ORCHESTRATOR_INSTRUCTIONS
 )
 from agent_framework import (
@@ -371,11 +374,13 @@ def main():
             sql_builder_thread = await project_client.agents.threads.create()
             sql_validator_thread = await project_client.agents.threads.create()
             data_extractor_thread = await project_client.agents.threads.create()
+            glossary_thread = await project_client.agents.threads.create()
             
             logger.info(f"Created threads:")
             logger.info(f"  sql_builder: {sql_builder_thread.id}")
             logger.info(f"  sql_validator: {sql_validator_thread.id}")
             logger.info(f"  data_extractor: {data_extractor_thread.id}")
+            logger.info(f"  glossary: {glossary_thread.id}")
             
             # Создаем отдельные клиенты для каждого агента
             async with (
@@ -383,11 +388,12 @@ def main():
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_builder_thread.id) as sql_builder_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=glossary_thread.id) as glossary_client,
             ):
                 facts_identifier_agent = facts_identifier_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Facts Identifier",
-                    description="Matches entities and metrics, finds them using MCP Tools.",
+                    description="Use MCP Tools to find every entity for the user request which is not covered by the glossary. Execute SELECT TOP 1 [fields] FROM [table] to find the entity.",
                     instructions=f"""for the user request: {prompt}
 
                         Identify tables and fields by using MCP Tools. Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.""",
@@ -443,6 +449,16 @@ def main():
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
 
+                glossary_agent = glossary_client.create_agent(
+                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
+                    name="Glossary",
+                    description=GLOSSARY_AGENT_DESCRIPTION,
+                    instructions=GLOSSARY_AGENT_INSTRUCTIONS,
+                    conversation_id=glossary_thread.id,
+                    temperature=0.1,
+                    additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
+                )
+
                 # Словари для хранения контейнеров и накопленного текста для каждого агента
                 agent_containers = {}
                 agent_accumulated_text = {}
@@ -456,7 +472,13 @@ def main():
 
                 workflow = (
                     MagenticBuilder()
-                    .participants(facts_identifier_agent = facts_identifier_agent, sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
+                    .participants(
+                        facts_identifier_agent = facts_identifier_agent,
+                        sql_builder = sql_builder_agent,
+                        sql_validator = sql_validtor_agent,
+                        data_extractor = data_extractor_agent,
+                        glossary = glossary_agent,
+                    )
                     .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
                         chat_client=OpenAIChatClient(**client_params),
