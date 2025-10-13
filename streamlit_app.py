@@ -35,7 +35,6 @@ from src.agent_instructions import (
     DATA_EXTRACTOR_INSTRUCTIONS,
     DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
     DATA_EXTRACTOR_DESCRIPTION,
-    GLOSSARY_AGENT_INSTRUCTIONS,
     GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
     GLOSSARY_AGENT_DESCRIPTION,
     ORCHESTRATOR_INSTRUCTIONS
@@ -458,7 +457,7 @@ def main():
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
-                    instructions=GLOSSARY_AGENT_INSTRUCTIONS,
+                    instructions=st.secrets["glossary"]["instructions"],
                     conversation_id=glossary_thread.id,
                     temperature=0.1,
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
