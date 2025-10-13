@@ -67,6 +67,74 @@ def get_time() -> str:
     current_time = datetime.now(timezone.utc)
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
+def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
+    """
+    Create event handler for workflow events with agent-specific state tracking.
+    
+    Args:
+        agent_containers: Dictionary to store Streamlit containers for each agent
+        agent_accumulated_text: Dictionary to accumulate streaming text for each agent
+    
+    Returns:
+        Async function that handles MagenticCallbackEvent instances
+    """
+    async def on_event(event: MagenticCallbackEvent) -> None:
+        """
+        The `on_event` callback processes events emitted by the workflow.
+        Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
+        """
+        if isinstance(event, MagenticOrchestratorMessageEvent):
+            st.write(f"**[Orchestrator - {event.kind}]**")
+            st.write(getattr(event.message, 'text', ''))
+            st.write("---")
+        
+        elif isinstance(event, MagenticAgentDeltaEvent):
+            agent_id = event.agent_id
+            
+            # Создаем новый контейнер для агента, если его еще нет
+            if agent_id not in agent_containers:
+                st.write(f"**[{agent_id}]**")
+                agent_containers[agent_id] = st.empty()
+                agent_accumulated_text[agent_id] = ""
+            
+            # Накапливаем текст
+            agent_accumulated_text[agent_id] += event.text
+            
+            # Обновляем контейнер с накопленным текстом
+            agent_containers[agent_id].markdown(agent_accumulated_text[agent_id])
+        
+        elif isinstance(event, MagenticAgentMessageEvent):
+            agent_id = event.agent_id
+            msg = event.message
+            
+            # Очищаем streaming контейнер
+            if agent_id in agent_containers:
+                agent_containers[agent_id].empty()
+                del agent_containers[agent_id]
+                del agent_accumulated_text[agent_id]
+            
+            # Выводим финальное сообщение
+            if msg is not None:
+                st.write(f"**[{agent_id} - Final]**")
+                st.markdown(msg.text or "")
+                st.write("---")
+        
+        elif isinstance(event, MagenticFinalResultEvent):
+            st.write("=" * 50)
+            st.write("**FINAL RESULT:**")
+            st.write("=" * 50)
+            if event.message is not None:
+                st.markdown(event.message.text)
+            st.write("=" * 50)
+
+        elif isinstance(event, ExecutorInvokedEvent):
+            st.write(f"**[Executor Invoked - {event.executor_id}]**")
+        
+        # Только логируем события, не выводим пользователю
+        logger.debug(f"Event: {type(event).__name__}")
+    
+    return on_event
+
 def initialize_app() -> None:
     """
     Initialize application: config, auth, MCP, agent manager, session state.
@@ -194,59 +262,8 @@ def main():
                 agent_containers = {}
                 agent_accumulated_text = {}
                 
-                async def on_event(event: MagenticCallbackEvent) -> None:
-                    """
-                    The `on_event` callback processes events emitted by the workflow.
-                    Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
-                    """
-                    if isinstance(event, MagenticOrchestratorMessageEvent):
-                        st.write(f"**[Orchestrator - {event.kind}]**")
-                        st.write(getattr(event.message, 'text', ''))
-                        st.write("---")
-                    
-                    elif isinstance(event, MagenticAgentDeltaEvent):
-                        agent_id = event.agent_id
-                        
-                        # Создаем новый контейнер для агента, если его еще нет
-                        if agent_id not in agent_containers:
-                            st.write(f"**[{agent_id}]**")
-                            agent_containers[agent_id] = st.empty()
-                            agent_accumulated_text[agent_id] = ""
-                        
-                        # Накапливаем текст
-                        agent_accumulated_text[agent_id] += event.text
-                        
-                        # Обновляем контейнер с накопленным текстом
-                        agent_containers[agent_id].markdown(agent_accumulated_text[agent_id])
-                    
-                    elif isinstance(event, MagenticAgentMessageEvent):
-                        agent_id = event.agent_id
-                        msg = event.message
-                        
-                        # Очищаем streaming контейнер
-                        if agent_id in agent_containers:
-                            agent_containers[agent_id].empty()
-                            del agent_containers[agent_id]
-                            del agent_accumulated_text[agent_id]
-                        
-                        # Выводим финальное сообщение
-                        if msg is not None:
-                            st.write(f"**[{agent_id} - Final]**")
-                            st.markdown(msg.text or "")
-                            st.write("---")
-                    
-                    elif isinstance(event, MagenticFinalResultEvent):
-                        st.write("=" * 50)
-                        st.write("**FINAL RESULT:**")
-                        st.write("=" * 50)
-                        if event.message is not None:
-                            st.markdown(event.message.text)
-                        st.write("=" * 50)
-
-                    elif isinstance(event, ExecutorInvokedEvent):
-                    
-                    # Только логируем события, не выводим пользователю
-                    logger.debug(f"Event: {type(event).__name__}")
+                # Создаем обработчик событий
+                on_event = create_event_handler(agent_containers, agent_accumulated_text)
 
                 workflow = (
                     MagenticBuilder()
