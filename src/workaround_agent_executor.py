@@ -34,7 +34,7 @@ def patch_magentic_for_event_interception():
                 is_final: bool
             ) -> None:
                 # Log/process the event BEFORE calling original
-                logger.info(f"🔍 Agent Event from '{aid}' (final={is_final})")
+                logger.debug(f"🔍 Agent Event from '{aid}' (final={is_final})")
                 logger.debug(f"   Update type: {type(update).__name__}")
                 logger.debug(f"   Text: {update.text[:100] if update.text else None}")
                 
@@ -67,6 +67,7 @@ def patch_magentic_for_event_interception():
                         
                         if isinstance(raw, RunStep):
                             logger.info(f"   📋 RunStep: type={raw.type}, status={raw.status}")
+                            logger.info(f"   📋 RunStep Raw: {raw}")
                             if hasattr(raw, 'step_details'):
                                 details = raw.step_details
                                 logger.debug(f"      Step details type: {type(details)}")
@@ -95,19 +96,6 @@ def patch_magentic_for_event_interception():
                         logger.debug("   Azure AI models not available for import")
                     except Exception as e:
                         logger.warning(f"   Error processing raw_representation: {e}", exc_info=True)
-                
-                # Check contents for function calls (standard agent framework events)
-                if hasattr(update, 'contents') and update.contents:
-                    from agent_framework import FunctionCallContent, FunctionResultContent
-                    logger.debug(f"   Contents: {len(update.contents)} items")
-                    for i, content in enumerate(update.contents):
-                        if isinstance(content, FunctionCallContent):
-                            logger.info(f"   📞 Function Call #{i+1}: {content.name}")
-                            logger.debug(f"      Call ID: {content.call_id}")
-                            logger.debug(f"      Args: {content.arguments}")
-                        elif isinstance(content, FunctionResultContent):
-                            logger.info(f"   ✅ Function Result #{i+1}: {content.call_id}")
-                            logger.debug(f"      Result: {str(content.result)[:200]}")
                 
                 # Call the original callback
                 await original_callback(aid, update, is_final)
