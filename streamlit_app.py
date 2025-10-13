@@ -9,7 +9,7 @@ from src.config import get_config, get_mcp_config, setup_environment_variables, 
 from src.constants import PROJ_ENDPOINT_KEY, AGENT_ID_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth
-from agent_framework import HostedMCPTool, ChatMessage
+from agent_framework import HostedMCPTool, ChatMessage, AgentRunResponseUpdate
 from agent_framework import WorkflowBuilder, MagenticBuilder, WorkflowOutputEvent, RequestInfoEvent, WorkflowFailedEvent, RequestInfoExecutor, WorkflowStatusEvent, WorkflowRunState
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
 from azure.identity.aio import DefaultAzureCredential
@@ -54,10 +54,12 @@ from agent_framework import (
 
 from src.workaround_mcp_headers import patch_azure_ai_client
 from src.workaround_magentic import patch_magentic_orchestrator
+from src.workaround_agent_executor import patch_magentic_for_event_interception
 
 # Применяем патчи ДО создания клиента
 patch_azure_ai_client()
 patch_magentic_orchestrator()
+patch_magentic_for_event_interception()
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
