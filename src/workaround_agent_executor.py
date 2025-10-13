@@ -10,6 +10,7 @@ from agent_framework import AgentRunResponseUpdate
 logger = logging.getLogger(__name__)
 
 global_unified_callback: CallbackSink | None = None
+global_runstep_callback = None  # Callable[[str, RunStep], Awaitable[None]]
 
 def patch_magentic_for_event_interception():
     """Apply monkey patch to intercept agent streaming events."""
@@ -59,53 +60,16 @@ def patch_magentic_for_event_interception():
                     
                     try:
                         # Try to detect Azure AI step events
-                        from azure.ai.agents.models import (
-                            RunStep, 
-                            RunStepDeltaChunk, 
-                            RequiredMcpToolCall,
-                            RequiredFunctionToolCall,
-                            RunStepMcpToolCall
-                        )
+                        from azure.ai.agents.models import RunStep, RunStepDeltaChunk
                         
                         if isinstance(raw, RunStep):
-                            logger.info(f"   📋 RunStep: type={raw.type}, status={raw.status}")
-                            logger.info(f"   📋 RunStep Raw: {raw}")
-                            if hasattr(raw, 'step_details'):
-                                details = raw.step_details
-                                logger.debug(f"      Step details type: {type(details)}")
-                                
-                                if hasattr(details, 'tool_calls') and details.tool_calls:
-                                    logger.info(f"      🔧 Tool calls detected: {len(details.tool_calls)} calls")
-                                    for i, tc in enumerate(details.tool_calls):
-                                        if isinstance(tc, RequiredMcpToolCall):
-                                            logger.info(f"      #{i+1} MCP: {tc.mcp.server_name}.{tc.mcp.name}")
-                                            logger.info(f"          Args: {tc.mcp.arguments}")
-                                        elif isinstance(tc, RequiredFunctionToolCall):
-                                            logger.info(f"      #{i+1} Function: {tc.function.name}")
-                                            logger.info(f"          Args: {tc.function.arguments}")
-                                        elif isinstance(tc, RunStepMcpToolCall):
-                                            if global_unified_callback is not None:
-                                                await global_unified_callback(
-                                                    MagenticAgentDeltaEvent(
-                                                        agent_id=aid,
-                                                        function_call_id=getattr(tc, "call_id", None),
-                                                        function_call_name=getattr(tc, "name", None),
-                                                        function_call_arguments=getattr(tc, "arguments", None),
-                                                        function_result=getattr(tc, "output", None),
-                                                        role=getattr(update, "role", None),
-                                                    )
-                                                )
-                                            logger.info(f"      #{i+1} MCP: {tc.server_label}.{tc.name}")
-                                            logger.info(f"          Args: {tc.arguments}")
-                                        else:
-                                            logger.info(f"      #{i+1} Tool: {type(tc).__name__}")
+                            logger.info(f"   📋 RunStep detected: type={raw.type}, status={raw.status}")
+                            # Вызываем отдельный обработчик RunStep событий
+                            if global_runstep_callback is not None:
+                                await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, RunStepDeltaChunk):
-                            logger.debug(f"   📝 RunStepDelta")
-                            if hasattr(raw, 'delta') and raw.delta:
-                                delta = raw.delta
-                                if hasattr(delta, 'step_details'):
-                                    logger.debug(f"      Delta step details: {type(delta.step_details)}")
+                            logger.debug(f"   📝 RunStepDelta detected")
                     
                     except ImportError:
                         # Azure AI not available, skip

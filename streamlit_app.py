@@ -70,6 +70,79 @@ def get_time() -> str:
     current_time = datetime.now(timezone.utc)
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
+async def on_runstep_event(agent_id: str, run_step) -> None:
+    """
+    Handle RunStep events from Azure AI agents.
+    
+    Args:
+        agent_id: ID of the agent that generated the step
+        run_step: RunStep object from Azure AI
+    """
+    import json
+    
+    try:
+        from azure.ai.agents.models import (
+            RequiredMcpToolCall,
+            RequiredFunctionToolCall,
+            RunStepMcpToolCall,
+            RunStepType,
+            RunStepStatus
+        )
+
+        if run_step.type != RunStepType.TOOL_CALLS or run_step.status != RunStepStatus.COMPLETED:
+            return
+            
+        st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
+        
+        if hasattr(run_step, 'step_details'):
+            details = run_step.step_details
+            
+            if hasattr(details, 'tool_calls') and details.tool_calls:
+                st.write(f"  🔧 **Tool calls:** {len(details.tool_calls)} call(s)")
+                
+                for i, tc in enumerate(details.tool_calls):
+                    if isinstance(tc, RequiredMcpToolCall):
+                        st.write(f"  #{i+1} **MCP:** `{tc.mcp.server_name}.{tc.mcp.name}`")
+                        # Arguments могут быть строкой или объектом
+                        try:
+                            if isinstance(tc.mcp.arguments, str):
+                                st.json(json.loads(tc.mcp.arguments))
+                            else:
+                                st.json(tc.mcp.arguments)
+                        except (json.JSONDecodeError, TypeError, AttributeError):
+                            st.code(str(tc.mcp.arguments))
+                    elif isinstance(tc, RequiredFunctionToolCall):
+                        st.write(f"  #{i+1} **Function:** `{tc.function.name}`")
+                        # Arguments могут быть строкой или объектом
+                        try:
+                            if isinstance(tc.function.arguments, str):
+                                st.json(json.loads(tc.function.arguments))
+                            else:
+                                st.json(tc.function.arguments)
+                        except (json.JSONDecodeError, TypeError, AttributeError):
+                            st.code(str(tc.function.arguments))
+                    elif isinstance(tc, RunStepMcpToolCall):
+                        st.write(f"  #{i+1} **MCP Result:** `{tc.server_label}.{tc.name}`")
+                        if hasattr(tc, 'output') and tc.output:
+                            # Пытаемся отобразить как JSON, если не получается - как текст
+                            try:
+                                if isinstance(tc.output, str):
+                                    parsed = json.loads(tc.output)
+                                    st.json(parsed)
+                                else:
+                                    st.json(tc.oxxutput)
+                            except (json.JSONDecodeError, TypeError):
+                                st.code(str(tc.output))
+                    else:
+                        pass;
+                        #st.write(f"  #{i+1} **Tool:** {type(tc).__name__}")
+        
+        st.write("---")
+    except ImportError:
+        logger.warning("Azure AI models not available for RunStep processing")
+    except Exception as e:
+        logger.error(f"Error processing RunStep: {e}", exc_info=True)
+
 def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
     """
     Create event handler for workflow events with agent-specific state tracking.
@@ -268,8 +341,9 @@ def main():
                 # Создаем обработчик событий
                 on_event = create_event_handler(agent_containers, agent_accumulated_text)
                 
-                # Устанавливаем глобальный callback для workaround модуля
+                # Устанавливаем глобальные callbacks для workaround модуля
                 agent_executor_workaround.global_unified_callback = on_event
+                agent_executor_workaround.global_runstep_callback = on_runstep_event
 
                 workflow = (
                     MagenticBuilder()
