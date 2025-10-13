@@ -63,6 +63,7 @@ def patch_magentic_for_event_interception():
                             RunStepDeltaChunk, 
                             RequiredMcpToolCall,
                             RequiredFunctionToolCall,
+                            RunStepMcpToolCall
                         )
                         
                         if isinstance(raw, RunStep):
@@ -81,6 +82,9 @@ def patch_magentic_for_event_interception():
                                         elif isinstance(tc, RequiredFunctionToolCall):
                                             logger.info(f"      #{i+1} Function: {tc.function.name}")
                                             logger.info(f"          Args: {tc.function.arguments}")
+                                        elif isinstance(tc, RunStepMcpToolCall):
+                                            logger.info(f"      #{i+1} MCP: {tc.server_label}.{tc.name}")
+                                            logger.info(f"          Args: {tc.arguments}")
                                         else:
                                             logger.info(f"      #{i+1} Tool: {type(tc).__name__}")
                         
