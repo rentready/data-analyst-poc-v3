@@ -20,7 +20,7 @@ OUTPUT FORMAT:
 
 SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."""
 
-SQL_BUILDER_DESCRIPTION = "Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ...."
+SQL_BUILDER_DESCRIPTION = "Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ...."
 
 # SQL Validator Agent Instructions
 SQL_VALIDATOR_INSTRUCTIONS = """You are a SQL Validator. Validate and improve SQL queries using MCP tools.
@@ -42,10 +42,10 @@ OUTPUT FORMAT:
 
 SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to validate syntax and schema. Return improved SQL with fixes."""
 
-SQL_VALIDATOR_DESCRIPTION = "SQL validation and improvement specialist"
+SQL_VALIDATOR_DESCRIPTION = "Use this tool to validate validate and give a feedback about the given SQL."
 
 # Data Extractor Agent Instructions
-DATA_EXTRACTOR_INSTRUCTIONS = """You are a Data Extractor. Execute SQL queries using MCP tools and return formatted results.
+DATA_EXTRACTOR_INSTRUCTIONS = """Execute SQL queries using MCP tools and return formatted results.
 
 OUTPUT FORMAT:
 Present data in tables or structured format.
@@ -53,7 +53,7 @@ Present data in tables or structured format.
 
 DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to execute the SQL query. Present results clearly."""
 
-DATA_EXTRACTOR_DESCRIPTION = "Data extraction and formatting specialist"
+DATA_EXTRACTOR_DESCRIPTION = "Use this tool when SQL query is validated and succeeded to extract data."
 
 # Glossary Agent Instructions
 GLOSSARY_AGENT_INSTRUCTIONS = """You are the RentReady Business Glossary - a reference for terminology and definitions.
@@ -62,13 +62,13 @@ BUSINESS TERMS & DEFINITIONS:
 
 **Work Order (msdyn_workorder)** - A service request for property maintenance or repair. Contains service type, property, dates, status, and assigned resources.
 
-**DSAT (Dissatisfaction)** - Customer dissatisfaction metric stored in table 'incident' (AKA 'case'). To get DSAT records, filter by rr_casetype = 315740000. Used to track service quality complaints.
+**DSAT (Dissatisfaction)** - Customer dissatisfaction metric stored in table 'incident' (also referenced as a 'case'). To get DSAT records, filter by rr_casetype = 315740000. Used to track service quality complaints.
 
 **Job Profile (rr_jobprofile), also referrenced as a Turn** - Template for common work order types with predefined settings, pricing, and service details. Linked to work orders via rr_jobprofileid.
 
 **Service Account** - Property management company or organization that requests services. The client/customer in the system.
 
-**Management Company** - Property management organization that manages properties. Stored in 'account' table. Related to properties and work orders. Referenced by field parentaccountid by properties (account record)
+**Management Company** - Property management organization that manages properties. Stored in 'account' table. Related to properties and work orders. Referenced by field parentaccountid by properties (account record). Metrics should be queried by individual property linked to it.
 
 **Market** - Geographic or business market segment. Stored in 'msdyn_organizationalunit' table. Used to organize and segment business operations by region or market area.
 

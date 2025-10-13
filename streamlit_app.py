@@ -393,10 +393,15 @@ def main():
                 facts_identifier_agent = facts_identifier_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Facts Identifier",
-                    description="Use MCP Tools to find every entity for the user request which is not covered by the glossary. Execute SELECT TOP 1 [fields] FROM [table] to find the entity.",
+                    description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
                     instructions=f"""for the user request: {prompt}
 
-                        Identify tables and fields by using MCP Tools. Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.""",
+                        Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
+                        1. Try exact match first (WHERE name = 'value')
+                        2. If not found, try partial match (WHERE name LIKE '%value%')
+                        3. If still not found, try similar names
+                        
+                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.""",
 
                     tools=[
                         mcp_tool_with_approval,
