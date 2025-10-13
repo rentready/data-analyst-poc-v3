@@ -306,7 +306,7 @@ def main():
             ):
                 sql_builder_agent = sql_builder_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="sql_builder",
+                    name="SQL Builder",
                     description=SQL_BUILDER_DESCRIPTION,
                     instructions=SQL_BUILDER_INSTRUCTIONS,
                     tools=[
@@ -314,12 +314,13 @@ def main():
                         get_time
                     ],
                     conversation_id=sql_builder_thread.id,
+                    temperature=0.1,
                     additional_instructions=SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
                 )
 
                 sql_validtor_agent = sql_validator_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="sql_validator",
+                    name="SQL Validator",
                     description=SQL_VALIDATOR_DESCRIPTION,
                     instructions=SQL_VALIDATOR_INSTRUCTIONS,
                     tools=[
@@ -327,12 +328,13 @@ def main():
                         get_time
                     ],
                     conversation_id=sql_validator_thread.id,
+                    temperature=0.1,
                     additional_instructions=SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS,
                 )
 
                 data_extractor_agent = data_extractor_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="data_extractor",
+                    name="Data Extractor",
                     description=DATA_EXTRACTOR_DESCRIPTION,
                     instructions=DATA_EXTRACTOR_INSTRUCTIONS,
                     tools=[
@@ -340,6 +342,7 @@ def main():
                         get_time
                     ],
                     conversation_id=data_extractor_thread.id,
+                    temperature=0.1,
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
 

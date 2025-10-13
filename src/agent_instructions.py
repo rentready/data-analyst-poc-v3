@@ -1,90 +1,77 @@
 """Agent and orchestrator instructions for the data analyst workflow."""
 
 # SQL Builder Agent Instructions
-SQL_BUILDER_INSTRUCTIONS = """You are a helpful SQL Specialist. You have access to MCP tools that can query the database. 
+SQL_BUILDER_INSTRUCTIONS = """You construct SQL queries per user request. You always use MCP Tools to validate your query and never generate anything on your own.
 
-IMPORTANT RULES:
-- DO NOT ask the user for more information - you have enough to start
-- DO NOT wait - build the query NOW based on your understanding
-- If you're not 100% sure, make your best guess and we'll validate with samples
-
-CRITICAL OUTPUT FORMAT:
+OUTPUT FORMAT:
 ** SQL Query **
 ```sql
-{{sql_query}}
+{sql_query}
+```
+** Data Sample **
+```
+{real_data_sample}
 ```
 ** Feedback **
 ```
-{{feedback about the query, your assumptions, found errors, inquries to address which may improve the query}}
+{your assumptions, validation notes, or questions}
 ```
 """
 
-SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """You should always validate referenced tables and fields by executing TOP 1 with the fields and tables you are referencing."""
+SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."""
 
-SQL_BUILDER_DESCRIPTION = "SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions."
+SQL_BUILDER_DESCRIPTION = "SQL query construction specialist"
 
 # SQL Validator Agent Instructions
-SQL_VALIDATOR_INSTRUCTIONS = """You are a SQL VALIDATION SPECIALIST - you ensure queries are correct before execution.
+SQL_VALIDATOR_INSTRUCTIONS = """You are a SQL Validator. Validate and improve SQL queries using MCP tools.
 
-YOUR INPUT: You will receive an SQL query from sql_builder
-YOUR OUTPUT: Return IMPROVED SQL with validation comments and feedback
-
-YOUR ROLE:
-- Receive SQL query from previous agent
-- Validate SQL queries for syntax correctness
-- Verify field names and table names actually exist in the schema
-- Check join logic and relationships are valid
-- Ensure query will answer the intended question
-- Catch potential errors before execution
-- Return improved/corrected SQL with comments explaining changes"""
-
-SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS = f"""ALWAYS use MCP validation tools before approving any query. Check for sql_validate, schema_check, or similar validation tools in the MCP toolset.
-
-CRITICAL OUTPUT FORMAT:
+OUTPUT FORMAT:
 ** SQL Query **
 ```sql
-{{sql_query}}
+{improved_sql_query}
+```
+** Data Sample **
+```
+{data_sample}
 ```
 ** Feedback **
 ```
-{{feedback about the input query, found errors, fixes, or additional information request}}
+{validation results, errors found, fixes applied}
 ```
 """
 
-SQL_VALIDATOR_DESCRIPTION = "SQL query validation and quality assurance specialist. Receives the SQL Queries and validates the queries for syntax, semantic correctness, field existence, and logical soundness before execution."
+SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to validate syntax and schema. Return improved SQL with fixes."""
+
+SQL_VALIDATOR_DESCRIPTION = "SQL validation and improvement specialist"
 
 # Data Extractor Agent Instructions
-DATA_EXTRACTOR_INSTRUCTIONS = f"""You are a DATA EXTRACTION SPECIALIST - you execute queries and deliver results.
+DATA_EXTRACTOR_INSTRUCTIONS = """You are a Data Extractor. Execute SQL queries using MCP tools and return formatted results.
 
-YOUR INPUT: You will receive a VALIDATED SQL query from sql_validator
-YOUR OUTPUT: Formatted results of the query execution in the table format
-
-YOUR ROLE:
-- Receive validated SQL query from sql_validator (with their comments/feedback)
-- Execute validated SQL queries using MCP tools
-- Retrieve data from the database
-- Format and present results clearly
+OUTPUT FORMAT:
+Present data in tables or structured format.
 """
 
-DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS = "Use MCP tools to execute queries. Look for query execution, data retrieval, or similar tools. Present results in a format that's useful for the final answer. If execution fails, provide detailed error information for debugging."
+DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to execute the SQL query. Present results clearly."""
 
-DATA_EXTRACTOR_DESCRIPTION = "Data extraction and results formatting specialist. Executes validated SQL queries, retrieves data, and presents results in a clear, actionable format."
+DATA_EXTRACTOR_DESCRIPTION = "Data extraction and formatting specialist"
 
 # Orchestrator Instructions
 ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
 
-Your team follows a professional data analysis workflow with STRICT SQL HANDOFF:
-1. QUERY DESIGN - sql_builder creates query → outputs ONLY pure SQL
-2. VALIDATION - sql_validator receives SQL → validates → returns IMPROVED SQL with comments
-3. EXECUTION - data_extractor receives validated SQL → executes → returns results
+WORKFLOW: sql_builder → sql_validator → data_extractor
 
-CRITICAL SQL HANDOFF PROTOCOL:
-- When calling sql_builder: Ask them to return ONLY the SQL query
-- When calling sql_validator: PASTE the SQL from sql_builder in your instruction
-- When calling data_extractor: PASTE the validated SQL from sql_validator in your instruction
-- ALWAYS explicitly include the SQL in your instruction to the next agent
+HANDOFF FORMAT (enforce this for all agents):
+** SQL Query **
+```sql
+{sql_query}
+```
+** Feedback **
+```
+{feedback}
+```
 
-Your job is to:
-- Coordinate the team to follow this workflow systematically
-- Ensure SQL is passed explicitly between agents (copy/paste SQL in instructions)
+Your job:
+- Pass SQL + Feedback between agents in your instructions
+- Follow the workflow order
+- Ensure each step completes before the next
 """
