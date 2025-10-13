@@ -6,7 +6,7 @@ import logging
 import os
 import asyncio
 from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config
-from src.constants import PROJ_ENDPOINT_KEY, AGENT_ID_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY
+from src.constants import PROJ_ENDPOINT_KEY, AGENT_ID_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth
 from agent_framework import HostedMCPTool, ChatMessage, AgentRunResponseUpdate
@@ -256,7 +256,7 @@ def main():
         description="Rent Ready MCP tool",
         url=mcp_config[MCP_SERVER_URL_KEY],
         approval_mode="never_require",
-        allowed_tools=[],
+        allowed_tools=mcp_config.get(MCP_ALLOWED_TOOLS_KEY, []),
         headers={"Authorization": f"Bearer {mcp_token}"},
     )
 

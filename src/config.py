@@ -7,8 +7,8 @@ from .constants import (
     ENV_SECRETS_KEY, AZURE_CLIENT_ID_KEY, AZURE_CLIENT_SECRET_KEY,
     AZURE_TENANT_ID_KEY, AUTHORITY_BASE_URL, MCP_SECRETS_KEY,
     MCP_CLIENT_ID_KEY, MCP_CLIENT_SECRET_KEY, MCP_SERVER_LABEL_KEY, MCP_SERVER_URL_KEY,
-    MODEL_DEPLOYMENT_NAME_KEY, OPENAI_SECRETS_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, 
-    OPENAI_BASE_URL_KEY, APP_SECRETS_KEY, APP_MAX_TOKENS_KEY, APP_TEMPERATURE_KEY
+    MCP_ALLOWED_TOOLS_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_SECRETS_KEY, OPENAI_API_KEY, 
+    OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, APP_SECRETS_KEY, APP_MAX_TOKENS_KEY, APP_TEMPERATURE_KEY
 )
 
 
@@ -90,10 +90,13 @@ def get_mcp_config() -> Optional[Dict[str, str]]:
             MCP_CLIENT_SECRET_KEY: mcp_config.get(MCP_CLIENT_SECRET_KEY),
             MCP_SERVER_LABEL_KEY: mcp_config.get(MCP_SERVER_LABEL_KEY, "mcp_server"),
             AZURE_TENANT_ID_KEY: tenant_id,
-            MCP_SERVER_URL_KEY: mcp_config.get(MCP_SERVER_URL_KEY, "")
+            MCP_SERVER_URL_KEY: mcp_config.get(MCP_SERVER_URL_KEY, ""),
+            MCP_ALLOWED_TOOLS_KEY: list(mcp_config.get(MCP_ALLOWED_TOOLS_KEY, []))
         }
         
-        missing = [k for k, v in config.items() if not v]
+        # Проверяем обязательные поля (allowed_tools опциональный)
+        required_keys = [MCP_CLIENT_ID_KEY, MCP_CLIENT_SECRET_KEY, AZURE_TENANT_ID_KEY, MCP_SERVER_URL_KEY]
+        missing = [k for k in required_keys if not config.get(k)]
         if missing:
             st.warning(f"⚠️ Missing MCP configuration in secrets: {', '.join(missing)}")
             st.info("💡 MCP functionality will be disabled. Add MCP configuration to enable it.")

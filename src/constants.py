@@ -43,6 +43,7 @@ MCP_SERVER_LABEL_KEY = "mcp_server_label"
 MCP_SERVER_URL_KEY = "mcp_server_url"
 MCP_CLIENT_ID_KEY = "mcp_client_id"
 MCP_CLIENT_SECRET_KEY = "mcp_client_secret"
+MCP_ALLOWED_TOOLS_KEY = "allowed_tools"
 MCP_SECRETS_KEY = "mcp"
 
 # OpenAI Configuration
