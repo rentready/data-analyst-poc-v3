@@ -65,6 +65,9 @@ patch_magentic_for_event_interception()
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
+# Храним последние сообщения агентов для вывода в runstep
+_agent_last_messages = {}
+
 def get_time() -> str:
     """Get the current UTC time."""
     current_time = datetime.now(timezone.utc)
@@ -89,7 +92,23 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
             RunStepStatus
         )
 
-        if run_step.type != RunStepType.TOOL_CALLS or run_step.status == RunStepStatus.IN_PROGRESS:
+        # Пропускаем IN_PROGRESS
+        if run_step.status == RunStepStatus.IN_PROGRESS:
+            return
+        
+        # Обработка MESSAGE_CREATION - выводим финальное сообщение
+        if run_step.type == RunStepType.MESSAGE_CREATION and run_step.status == RunStepStatus.COMPLETED:
+            st.write(f"**[{agent_id} - Message]**")
+            # Выводим сохраненное сообщение если есть
+            if agent_id in _agent_last_messages:
+                st.markdown(_agent_last_messages[agent_id])
+            else:
+                st.write("Message created")
+            st.write("---")
+            return
+        
+        # Обработка TOOL_CALLS
+        if run_step.type != RunStepType.TOOL_CALLS:
             return
 
         st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
@@ -117,31 +136,63 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
                     elif isinstance(tc, RequiredFunctionToolCall):
                         pass;
                     elif isinstance(tc, RunStepMcpToolCall):
-                        st.write(f"  #{i+1} **MCP Result:** `{tc.server_label}.{tc.name}`")
+                        # Формируем краткий заголовок с названием и статусом
+                        tool_name = f"{tc.server_label}.{tc.name}"
+                        result_preview = ""
                         
-                        # Выводим аргументы (входные параметры)
-                        if hasattr(tc, 'arguments') and tc.arguments:
-                            st.write("  **Arguments:**")
-                            try:
-                                if isinstance(tc.arguments, str):
-                                    st.json(json.loads(tc.arguments))
-                                else:
-                                    st.json(tc.arguments)
-                            except (json.JSONDecodeError, TypeError, AttributeError):
-                                st.code(str(tc.arguments))
-                        
-                        # Выводим output (результат)
+                        # Получаем превью результата для заголовка
                         if hasattr(tc, 'output') and tc.output:
-                            st.write("  **Output:**")
-                            # Пытаемся отобразить как JSON, если не получается - как текст
                             try:
+                                # Пытаемся распарсить JSON для более полезного превью
                                 if isinstance(tc.output, str):
-                                    parsed = json.loads(tc.output)
-                                    st.json(parsed)
+                                    try:
+                                        parsed = json.loads(tc.output)
+                                        # Для массива показываем количество элементов
+                                        if isinstance(parsed, list):
+                                            result_preview = f"✓ {len(parsed)} rows"
+                                        # Для объекта показываем первые поля
+                                        elif isinstance(parsed, dict):
+                                            keys = list(parsed.keys())[:3]
+                                            result_preview = f"✓ {', '.join(keys)}..."
+                                        else:
+                                            output_str = str(parsed)[:50]
+                                            result_preview = f"✓ {output_str}..."
+                                    except json.JSONDecodeError:
+                                        output_str = tc.output[:50]
+                                        result_preview = f"✓ {output_str}..." if len(tc.output) > 50 else f"✓ {tc.output}"
                                 else:
-                                    st.json(tc.output)
-                            except (json.JSONDecodeError, TypeError):
-                                st.code(str(tc.output))
+                                    output_str = str(tc.output)[:50]
+                                    result_preview = f"✓ {output_str}..."
+                            except:
+                                result_preview = "✓ Success"
+                        else:
+                            result_preview = "⏳ No output"
+                        
+                        # Схлопывающийся блок с кратким заголовком
+                        with st.expander(f"#{i+1} `{tool_name}` - {result_preview}"):
+                            # Выводим аргументы (входные параметры)
+                            if hasattr(tc, 'arguments') and tc.arguments:
+                                st.write("**Arguments:**")
+                                try:
+                                    if isinstance(tc.arguments, str):
+                                        st.json(json.loads(tc.arguments))
+                                    else:
+                                        st.json(tc.arguments)
+                                except (json.JSONDecodeError, TypeError, AttributeError):
+                                    st.code(str(tc.arguments))
+                            
+                            # Выводим output (результат)
+                            if hasattr(tc, 'output') and tc.output:
+                                st.write("**Output:**")
+                                # Пытаемся отобразить как JSON, если не получается - как текст
+                                try:
+                                    if isinstance(tc.output, str):
+                                        parsed = json.loads(tc.output)
+                                        st.json(parsed)
+                                    else:
+                                        st.json(tc.output)
+                                except (json.JSONDecodeError, TypeError):
+                                    st.code(str(tc.output))
                     else:
                         pass;
                         #st.write(f"  #{i+1} **Tool:** {type(tc).__name__}")
@@ -198,11 +249,9 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
                 del agent_containers[agent_id]
                 del agent_accumulated_text[agent_id]
             
-            # Выводим финальное сообщение
-            if msg is not None:
-                st.write(f"**[{agent_id} - Final]**")
-                st.markdown(msg.text or "")
-                st.write("---")
+            # Сохраняем сообщение для вывода в runstep
+            if msg is not None and msg.text:
+                _agent_last_messages[agent_id] = msg.text
         
         elif isinstance(event, MagenticFinalResultEvent):
             st.write("=" * 50)
