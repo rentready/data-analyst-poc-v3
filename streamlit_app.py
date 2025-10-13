@@ -54,6 +54,7 @@ from agent_framework import (
 
 from src.workaround_mcp_headers import patch_azure_ai_client
 from src.workaround_magentic import patch_magentic_orchestrator
+import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
 
 # Применяем патчи ДО создания клиента
@@ -266,6 +267,9 @@ def main():
                 
                 # Создаем обработчик событий
                 on_event = create_event_handler(agent_containers, agent_accumulated_text)
+                
+                # Устанавливаем глобальный callback для workaround модуля
+                agent_executor_workaround.global_unified_callback = on_event
 
                 workflow = (
                     MagenticBuilder()

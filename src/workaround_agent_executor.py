@@ -4,11 +4,12 @@ Use this in your application until the library is updated.
 """
 
 import logging
-from agent_framework._workflows._magentic import MagenticAgentExecutor
+from agent_framework._workflows._magentic import MagenticAgentExecutor, MagenticAgentDeltaEvent, CallbackSink
 from agent_framework import AgentRunResponseUpdate
 
 logger = logging.getLogger(__name__)
 
+global_unified_callback: CallbackSink | None = None
 
 def patch_magentic_for_event_interception():
     """Apply monkey patch to intercept agent streaming events."""
@@ -83,6 +84,17 @@ def patch_magentic_for_event_interception():
                                             logger.info(f"      #{i+1} Function: {tc.function.name}")
                                             logger.info(f"          Args: {tc.function.arguments}")
                                         elif isinstance(tc, RunStepMcpToolCall):
+                                            if global_unified_callback is not None:
+                                                await global_unified_callback(
+                                                    MagenticAgentDeltaEvent(
+                                                        agent_id=aid,
+                                                        function_call_id=getattr(tc, "call_id", None),
+                                                        function_call_name=getattr(tc, "name", None),
+                                                        function_call_arguments=getattr(tc, "arguments", None),
+                                                        function_result=getattr(tc, "output", None),
+                                                        role=getattr(update, "role", None),
+                                                    )
+                                                )
                                             logger.info(f"      #{i+1} MCP: {tc.server_label}.{tc.name}")
                                             logger.info(f"          Args: {tc.arguments}")
                                         else:
