@@ -142,36 +142,32 @@ def main():
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="sql_builder",
                     description="SQL query construction specialist. Builds syntactically correct queries based on actual schema information discovered by the knowledge collector, not assumptions.",
-                    instructions="""You are a SQL QUERY BUILDER - you craft precise, efficient SQL queries.
+                    instructions="""You have access to MCP tools that can query the RentReady SQL Server database. The database contains:
+- Work orders (msdyn_workorder table) with dates, status, service accounts
+- Job profiles (rr_jobprofile table) linked to work orders  
+- Invoices (invoice table) with billing information
+- Accounts (account table) for properties and customers
+- Work order services (msdyn_workorderservice table) with service details
 
-YOUR ROLE:
-- Construct SQL queries based on actual schema information provided
-- Use exact field names, table names, and structures from discovery phase
-- Build queries that answer the user's specific question
-- Optimize for clarity and correctness
+YOUR TASK - BUILD THE QUERY NOW:
+1. Analyze the user's question
+2. Determine which table(s) you need (work orders, invoices, job profiles, etc.)
+3. BUILD a preliminary SQL query using read_data or find_* MCP tools
+4. Include appropriate filters (dates, status, etc.)
 
-YOUR METHODOLOGY:
-1. Review findings from knowledge_collector about table schemas and field names
-2. Identify which tables and fields are needed for the user's request
-3. Determine necessary JOINs based on documented relationships
-4. Add appropriate WHERE clauses, aggregations, and ordering
-5. Write clean, well-formatted SQL with clear aliasing
-6. If schema info is missing, request it - don't guess!
+IMPORTANT RULES:
+- DO NOT ask the user for more information - you have enough to start
+- DO NOT wait - build the query NOW based on your understanding
+- Use your knowledge of the RentReady schema
+- This is preliminary - it will be tested and refined in the next step
+- If you're not 100% sure, make your best guess and we'll validate with samples
 
-CRITICAL RULES:
-- NEVER guess field names or table names - use what was discovered
-- ALWAYS reference the exact field names from schema exploration
-- If you need more schema info, ask for it explicitly
-- Use proper SQL syntax for the database type (check MCP tool hints)
-- Include comments in complex queries to explain logic
-- Build incrementally - start simple, add complexity as needed
+EXAMPLE: If user asks "How many work orders in September 2024?", you should:
+- Use find_work_orders or read_data on msdyn_workorder table
+- Filter by date_from="2024-09-01" and date_to="2024-09-30"
+- Count the results
 
-QUERY BEST PRACTICES:
-- Use explicit column names (not SELECT *)
-- Add table aliases for readability
-- Use proper JOIN syntax with ON conditions
-- Consider NULL handling and data types
-- Test logic mentally before finalizing""",
+NOW BUILD THE PRELIMINARY QUERY for the user's question above. Show the query/tool call and explain your reasoning.""",
                     tools=[
                         mcp_tool_with_approval,
                         get_time
