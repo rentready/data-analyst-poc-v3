@@ -62,7 +62,7 @@ def patch_magentic_for_event_interception():
                     
                     try:
                         # Try to detect Azure AI step events
-                        from azure.ai.agents.models import RunStep, RunStepDeltaChunk
+                        from azure.ai.agents.models import RunStep, RunStepDeltaChunk, MessageDeltaChunk
                         
                         if isinstance(raw, RunStep):
                             runstep_id = getattr(raw, 'id', None)
@@ -82,6 +82,13 @@ def patch_magentic_for_event_interception():
                         
                         elif isinstance(raw, RunStepDeltaChunk):
                             logger.info(f"   📝 RunStepDelta detected")
+                        
+                        elif isinstance(raw, MessageDeltaChunk):
+                            logger.info(f"   💬 MessageDeltaChunk detected")
+                            # Передаем в callback для обработки streaming
+                            #if global_runstep_callback is not None:
+                            #    await global_runstep_callback(aid, raw)
+                        
                         else:
                             logger.info(f"   📝 Unknown event type: {type(raw)}")
                     

@@ -65,21 +65,22 @@ patch_magentic_for_event_interception()
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
-# Храним последние сообщения агентов для вывода в runstep
-_agent_last_messages = {}
+# Контейнеры для streaming сообщений агентов
+_message_containers = {}
+_message_accumulated_text = {}
 
 def get_time() -> str:
     """Get the current UTC time."""
     current_time = datetime.now(timezone.utc)
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
-async def on_runstep_event(agent_id: str, run_step) -> None:
+async def on_runstep_event(agent_id: str, event) -> None:
     """
-    Handle RunStep events from Azure AI agents.
+    Handle RunStep events and MessageDeltaChunk from Azure AI agents.
     
     Args:
         agent_id: ID of the agent that generated the step
-        run_step: RunStep object from Azure AI
+        event: RunStep or MessageDeltaChunk object from Azure AI
     """
     import json
     
@@ -89,23 +90,54 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
             RequiredFunctionToolCall,
             RunStepMcpToolCall,
             RunStepType,
-            RunStepStatus
+            RunStepStatus,
+            MessageDeltaChunk
         )
-
-        # Пропускаем IN_PROGRESS
-        if run_step.status == RunStepStatus.IN_PROGRESS:
+        
+        # Обработка MessageDeltaChunk (streaming текст)
+        if isinstance(event, MessageDeltaChunk):
+            if agent_id in _message_containers:
+                # Извлекаем текст из delta
+                if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
+                    for content in event.delta.content:
+                        if hasattr(content, 'text') and hasattr(content.text, 'value'):
+                            _message_accumulated_text[agent_id] += content.text.value
+                
+                # Обновляем контейнер
+                _message_containers[agent_id].markdown(_message_accumulated_text[agent_id])
             return
         
-        # Обработка MESSAGE_CREATION - выводим финальное сообщение
-        if run_step.type == RunStepType.MESSAGE_CREATION and run_step.status == RunStepStatus.COMPLETED:
-            st.write(f"**[{agent_id} - Message]**")
-            # Выводим сохраненное сообщение если есть
-            if agent_id in _agent_last_messages:
-                st.markdown(_agent_last_messages[agent_id])
-            else:
-                st.write("Message created")
-            st.write("---")
-            return
+        # Обработка RunStep
+        run_step = event
+
+        # Обработка MESSAGE_CREATION
+        if run_step.type == RunStepType.MESSAGE_CREATION:
+            # IN_PROGRESS - создаем контейнер для streaming
+            if run_step.status == RunStepStatus.IN_PROGRESS:
+                if agent_id not in _message_containers:
+                    st.write(f"**[{agent_id} - Message]**")
+                    _message_containers[agent_id] = st.empty()
+                    _message_accumulated_text[agent_id] = ""
+                return
+            
+            # COMPLETED - убираем контейнер, выводим обычным способом
+            elif run_step.status == RunStepStatus.COMPLETED:
+                if agent_id in _message_containers:
+                    final_text = _message_accumulated_text.get(agent_id, "")
+                    
+                    # Убираем streaming контейнер
+                    _message_containers[agent_id].empty()
+                    del _message_containers[agent_id]
+                    del _message_accumulated_text[agent_id]
+                    
+                    logger.info(f"**[{agent_id} - Message]**")
+                    logger.info(f"{final_text}")
+                    logger.info("---")
+                    # Выводим финальное сообщение обычным способом
+                    st.write(f"**[{agent_id} - Message]**")
+                    st.markdown(final_text or "Message created")
+                    st.write("---")
+                return
         
         # Обработка TOOL_CALLS
         if run_step.type != RunStepType.TOOL_CALLS:
@@ -242,16 +274,13 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
         elif isinstance(event, MagenticAgentMessageEvent):
             agent_id = event.agent_id
             msg = event.message
+            st.write(msg.text)
             
             # Очищаем streaming контейнер
             if agent_id in agent_containers:
                 agent_containers[agent_id].empty()
                 del agent_containers[agent_id]
                 del agent_accumulated_text[agent_id]
-            
-            # Сохраняем сообщение для вывода в runstep
-            if msg is not None and msg.text:
-                _agent_last_messages[agent_id] = msg.text
         
         elif isinstance(event, MagenticFinalResultEvent):
             st.write("=" * 50)
@@ -338,6 +367,7 @@ def main():
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
             # Создаем отдельные threads для каждого агента
+            facts_identifier_thread = await project_client.agents.threads.create()
             sql_builder_thread = await project_client.agents.threads.create()
             sql_validator_thread = await project_client.agents.threads.create()
             data_extractor_thread = await project_client.agents.threads.create()
@@ -349,10 +379,28 @@ def main():
             
             # Создаем отдельные клиенты для каждого агента
             async with (
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=facts_identifier_thread.id) as facts_identifier_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_builder_thread.id) as sql_builder_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
             ):
+                facts_identifier_agent = facts_identifier_client.create_agent(
+                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
+                    name="Facts Identifier",
+                    description="Matches entities and metrics, finds them using MCP Tools.",
+                    instructions=f"""for the user request: {prompt}
+
+                        Identify tables and fields by using MCP Tools. Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.""",
+
+                    tools=[
+                        mcp_tool_with_approval,
+                        get_time
+                    ],
+                    conversation_id=sql_builder_thread.id,
+                    temperature=0.1,
+                    additional_instructions="Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
+                )
+
                 sql_builder_agent = sql_builder_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="SQL Builder",
@@ -408,7 +456,7 @@ def main():
 
                 workflow = (
                     MagenticBuilder()
-                    .participants(sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
+                    .participants(facts_identifier_agent = facts_identifier_agent, sql_builder = sql_builder_agent, sql_validator = sql_validtor_agent, data_extractor = data_extractor_agent,)
                     .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
                         chat_client=OpenAIChatClient(**client_params),

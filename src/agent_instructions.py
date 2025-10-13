@@ -58,7 +58,7 @@ DATA_EXTRACTOR_DESCRIPTION = "Data extraction and formatting specialist"
 # Orchestrator Instructions
 ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
 
-WORKFLOW: sql_builder → sql_validator → data_extractor
+WORKFLOW: facts_identifier <> sql_builder <> sql_validator <> data_extractor
 
 HANDOFF FORMAT (enforce this for all agents):
 ** SQL Query **
