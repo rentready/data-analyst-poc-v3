@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 global_runstep_callback = None  # Callable[[str, RunStep], Awaitable[None]]
 
+# Храним последний обработанный (id, status) для каждого агента
+_last_runstep_state = {}  # {agent_id: (step_id, status)}
+
 def patch_magentic_for_event_interception():
     """Apply monkey patch to intercept agent streaming events."""
     
@@ -62,10 +65,20 @@ def patch_magentic_for_event_interception():
                         from azure.ai.agents.models import RunStep, RunStepDeltaChunk
                         
                         if isinstance(raw, RunStep):
-                            logger.info(f"   📋 RunStep detected: type={raw.type}, status={raw.status}")
-                            # Вызываем отдельный обработчик RunStep событий
-                            if global_runstep_callback is not None:
-                                await global_runstep_callback(aid, raw)
+                            runstep_id = getattr(raw, 'id', None)
+                            runstep_status = getattr(raw, 'status', None)
+                            
+                            # Проверяем, не дубликат ли это (тот же id и status)
+                            last_state = _last_runstep_state.get(aid)
+                            if last_state and last_state == (runstep_id, runstep_status):
+                                logger.debug(f"   ⏭️  Skipping duplicate: id={runstep_id}, status={runstep_status}")
+                            else:
+                                # Сохраняем новое состояние
+                                _last_runstep_state[aid] = (runstep_id, runstep_status)
+                                logger.info(f"   📋 RunStep detected: type={raw.type}, status={runstep_status}, id={runstep_id}")
+                                # Вызываем отдельный обработчик RunStep событий
+                                if global_runstep_callback is not None:
+                                    await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, RunStepDeltaChunk):
                             logger.debug(f"   📝 RunStepDelta detected")

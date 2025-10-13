@@ -89,7 +89,7 @@ async def on_runstep_event(agent_id: str, run_step) -> None:
             RunStepStatus
         )
 
-        if run_step.type != RunStepType.TOOL_CALLS or run_step.status != RunStepStatus.COMPLETED:
+        if run_step.type != RunStepType.TOOL_CALLS or run_step.status == RunStepStatus.IN_PROGRESS:
             return
 
         st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
