@@ -257,7 +257,7 @@ def initialize_app() -> None:
         st.stop()
 
 def main():
-    st.title("🤖 Ultra Simple Chat")
+    st.title("🤖 Data Analyst Chat")
 
     initialize_app()
 
@@ -287,8 +287,6 @@ def main():
     )
 
     async def run_workflow(prompt: str):
-        _status_viewer = st.empty()
-        _status_viewer.status("Starting workflow...")
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -430,13 +428,6 @@ def main():
                     .with_standard_manager(
                         chat_client=orchestrator_client,
                         instructions=ORCHESTRATOR_INSTRUCTIONS,
-                        task_ledger_facts_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
-                        task_ledger_plan_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
-                        task_ledger_full_prompt=ORCHESTRATOR_TASK_LEDGER_FULL_PROMPT,
-                        task_ledger_facts_update_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT,
-                        task_ledger_plan_update_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
-                        progress_ledger_prompt=ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
-                        final_answer_prompt=ORCHESTRATOR_FINAL_ANSWER_PROMPT,
 
                         max_round_count=15,
                         max_stall_count=4,
