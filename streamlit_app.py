@@ -105,7 +105,8 @@ async def on_runstep_event(agent_id: str, event) -> None:
             RunStepType,
             RunStepStatus,
             MessageDeltaChunk,
-            ThreadRun
+            ThreadRun,
+            RunStep
         )
         
         # Обработка ThreadRun (агент взял задачу) - делегируем в EventRenderer
@@ -159,10 +160,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     logger.info(f"{final_text}")
                     logger.info("---")
                 return
-        
-        # Обработка TOOL_CALLS - делегируем в EventRenderer
-        EventRenderer.render(event)
-        st.session_state.messages.append(event)
+
+        if isinstance(event, RunStep):
+            # Обработка TOOL_CALLS - делегируем в EventRenderer
+            EventRenderer.render(event)
+            st.session_state.messages.append(event)
         
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")
@@ -359,20 +361,6 @@ def main():
 
                 logger.info(f"Created agent {sql_builder_agent}")
 
-                sql_validtor_agent = sql_validator_client.create_agent(
-                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="SQL Validator",
-                    description=SQL_VALIDATOR_DESCRIPTION,
-                    instructions=SQL_VALIDATOR_INSTRUCTIONS,
-                    tools=[
-                        mcp_tool_with_approval,
-                        get_time
-                    ],
-                    conversation_id=sql_validator_thread.id,
-                    temperature=0.1,
-                    additional_instructions=SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS,
-                )
-
                 data_extractor_agent = data_extractor_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Data Extractor",
@@ -420,7 +408,6 @@ def main():
                     .participants(
                         facts_identifier_agent = facts_identifier_agent,
                         sql_builder = sql_builder_agent,
-                        sql_validator = sql_validtor_agent,
                         data_extractor = data_extractor_agent,
                         glossary = glossary_agent,
                     )
