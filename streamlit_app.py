@@ -127,12 +127,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
             # IN_PROGRESS - создаем контейнер для streaming
             if run_step.status == RunStepStatus.IN_PROGRESS:
                 if agent_id not in _message_containers:
-                    st.write(f"**[{agent_id} - Message]**")
                     _message_containers[agent_id] = st.empty()
                     _message_accumulated_text[agent_id] = ""
                 return
             
-            # COMPLETED - убираем контейнер, выводим обычным способом
+            # COMPLETED - убираем контейнер, выводим через рендерер
             elif run_step.status == RunStepStatus.COMPLETED:
                 if agent_id in _message_containers:
                     final_text = _message_accumulated_text.get(agent_id, "")
@@ -142,8 +141,10 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     del _message_containers[agent_id]
                     del _message_accumulated_text[agent_id]
                     
+                    # Рендерим через EventRenderer (свернутое по умолчанию)
+                    EventRenderer.render_agent_final_message(agent_id, final_text)
+                    
                     logger.info(f"**[{agent_id} - Message]**")
-                    st.write(final_text)
                     logger.info(f"{final_text}")
                     logger.info("---")
                 return

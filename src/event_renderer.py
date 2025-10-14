@@ -98,6 +98,16 @@ class EventRenderer:
         st.write(event.message.text)
     
     @staticmethod
+    def render_agent_final_message(agent_id: str, message_text: str):
+        """Render agent's final message in collapsible format (auxiliary message)."""
+        # Определяем превью (первые 100 символов)
+        preview = message_text[:100] + "..." if len(message_text) > 100 else message_text
+        
+        # Сворачивающийся блок с превью
+        with st.expander(f"💬 **{agent_id}** - {preview}", expanded=False):
+            st.markdown(message_text)
+    
+    @staticmethod
     def render_final_result(event: MagenticFinalResultEvent):
         """Render final workflow result."""
         st.write("=" * 50)
