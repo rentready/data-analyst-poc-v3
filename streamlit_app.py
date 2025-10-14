@@ -58,6 +58,7 @@ from src.workaround_mcp_headers import patch_azure_ai_client
 from src.workaround_magentic import patch_magentic_orchestrator
 import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
+from src.event_renderer import EventRenderer
 
 # Применяем патчи ДО создания клиента
 patch_azure_ai_client()
@@ -94,13 +95,8 @@ async def on_runstep_event(agent_id: str, event) -> None:
         agent_id: ID of the agent that generated the step
         event: RunStep or MessageDeltaChunk object from Azure AI
     """
-    import json
-    
     try:
         from azure.ai.agents.models import (
-            RequiredMcpToolCall,
-            RequiredFunctionToolCall,
-            RunStepMcpToolCall,
             RunStepType,
             RunStepStatus,
             MessageDeltaChunk
@@ -146,103 +142,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     st.write(final_text)
                     logger.info(f"{final_text}")
                     logger.info("---")
-                    # Выводим финальное сообщение обычным способом
-                    # TO DO
                 return
         
-        # Обработка TOOL_CALLS
-        if run_step.type != RunStepType.TOOL_CALLS:
-            return
-
-        #st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
-
-        if run_step.status == RunStepStatus.FAILED:
-            st.session_state.messages.append({"role": agent_id, "content": run_step})
-            st.error(f"{run_step}")
+        # Обработка TOOL_CALLS - делегируем в EventRenderer
+        EventRenderer.render(event)
         
-        if hasattr(run_step, 'step_details'):
-            details = run_step.step_details
-            
-            if hasattr(details, 'tool_calls') and details.tool_calls:
-                st.write(f"  🔧 **Tool calls:** {len(details.tool_calls)} call(s)")
-                
-                for i, tc in enumerate(details.tool_calls):
-                    if isinstance(tc, RequiredMcpToolCall):
-                        st.write(f"  #{i+1} **MCP:** `{tc.mcp.server_name}.{tc.mcp.name}`")
-                        st.session_state.messages.append({"role": agent_id, "content": f"  #{i+1} **MCP:** `{tc.mcp.server_name}.{tc.mcp.name}`"})
-                        # Arguments могут быть строкой или объектом
-                        try:
-                            if isinstance(tc.mcp.arguments, str):
-                                st.json(json.loads(tc.mcp.arguments))
-                            else:
-                                st.json(tc.mcp.arguments)
-                        except (json.JSONDecodeError, TypeError, AttributeError):
-                            st.code(str(tc.mcp.arguments))
-                    elif isinstance(tc, RequiredFunctionToolCall):
-                        pass;
-                    elif isinstance(tc, RunStepMcpToolCall):
-                        # Формируем краткий заголовок с названием и статусом
-                        tool_name = f"{tc.server_label}.{tc.name}"
-                        result_preview = ""
-                        
-                        # Получаем превью результата для заголовка
-                        if hasattr(tc, 'output') and tc.output:
-                            try:
-                                # Пытаемся распарсить JSON для более полезного превью
-                                if isinstance(tc.output, str):
-                                    try:
-                                        parsed = json.loads(tc.output)
-                                        # Для массива показываем количество элементов
-                                        if isinstance(parsed, list):
-                                            result_preview = f"✓ {len(parsed)} rows"
-                                        # Для объекта показываем первые поля
-                                        elif isinstance(parsed, dict):
-                                            keys = list(parsed.keys())[:3]
-                                            result_preview = f"✓ {', '.join(keys)}..."
-                                        else:
-                                            output_str = str(parsed)[:50]
-                                            result_preview = f"✓ {output_str}..."
-                                    except json.JSONDecodeError:
-                                        output_str = tc.output[:50]
-                                        result_preview = f"✓ {output_str}..." if len(tc.output) > 50 else f"✓ {tc.output}"
-                                else:
-                                    output_str = str(tc.output)[:50]
-                                    result_preview = f"✓ {output_str}..."
-                            except:
-                                result_preview = "✓ Success"
-                        else:
-                            result_preview = "⏳ No output"
-                        
-                        # Схлопывающийся блок с кратким заголовком
-                        with st.expander(f"#{i+1} `{tool_name}` - {result_preview}"):
-                            # Выводим аргументы (входные параметры)
-                            if hasattr(tc, 'arguments') and tc.arguments:
-                                st.write("**Arguments:**")
-                                try:
-                                    if isinstance(tc.arguments, str):
-                                        st.json(json.loads(tc.arguments))
-                                    else:
-                                        st.json(tc.arguments)
-                                except (json.JSONDecodeError, TypeError, AttributeError):
-                                    st.code(str(tc.arguments))
-                            
-                            # Выводим output (результат)
-                            if hasattr(tc, 'output') and tc.output:
-                                st.write("**Output:**")
-                                # Пытаемся отобразить как JSON, если не получается - как текст
-                                try:
-                                    if isinstance(tc.output, str):
-                                        parsed = json.loads(tc.output)
-                                        st.json(parsed)
-                                    else:
-                                        st.json(tc.output)
-                                except (json.JSONDecodeError, TypeError):
-                                    st.code(str(tc.output))
-                    else:
-                        pass;
-                        #st.write(f"  #{i+1} **Tool:** {type(tc).__name__}")
-        
-        st.write("---")
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")
     except Exception as e:
@@ -264,14 +168,8 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
         The `on_event` callback processes events emitted by the workflow.
         Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
         """
-        if isinstance(event, MagenticOrchestratorMessageEvent):
-            st.write(f"**[Orchestrator - {event.kind}]**")
-            st.write(getattr(event.message, 'text', ''))
-            st.write("---")
-            st.session_state.messages.append({"role": "Orchestrator", "content": f"**[Orchestrator - {event.kind}]**"})
-            st.session_state.messages.append({"role": "Orchestrator", "content": getattr(event.message, 'text', '')})
-        
-        elif isinstance(event, MagenticAgentDeltaEvent):
+        # Обработка MagenticAgentDeltaEvent требует управления контейнерами
+        if isinstance(event, MagenticAgentDeltaEvent):
             agent_id = event.agent_id
             
             # Создаем новый контейнер для агента, если его еще нет
@@ -288,9 +186,12 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
         
         elif isinstance(event, MagenticAgentMessageEvent):
             agent_id = event.agent_id
-            msg = event.message
-            st.write(msg.text)
-            st.session_state.messages.append({"role": agent_id, "content": msg.text})
+            
+            # Рендерим сообщение через EventRenderer
+            EventRenderer.render(event)
+            
+            # Сохраняем в session state
+            st.session_state.messages.append({"role": agent_id, "content": event.message.text})
             
             # Очищаем streaming контейнер
             if agent_id in agent_containers:
@@ -298,17 +199,25 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
                 del agent_containers[agent_id]
                 del agent_accumulated_text[agent_id]
         
+        elif isinstance(event, MagenticOrchestratorMessageEvent):
+            # Рендерим через EventRenderer
+            EventRenderer.render(event)
+            
+            # Сохраняем в session state
+            st.session_state.messages.append({"role": "Orchestrator", "content": f"**[Orchestrator - {event.kind}]**"})
+            st.session_state.messages.append({"role": "Orchestrator", "content": getattr(event.message, 'text', '')})
+        
         elif isinstance(event, MagenticFinalResultEvent):
-            st.write("=" * 50)
-            st.write("**FINAL RESULT:**")
-            st.write("=" * 50)
+            # Рендерим через EventRenderer
+            EventRenderer.render(event)
+            
+            # Сохраняем в session state
             if event.message is not None:
-                st.markdown(event.message.text)
                 st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
-            st.write("=" * 50)
 
         elif isinstance(event, ExecutorInvokedEvent):
-            st.write(f"**[Executor Invoked - {event.executor_id}]**")
+            # Рендерим через EventRenderer
+            EventRenderer.render(event)
         
         # Только логируем события, не выводим пользователю
         logger.debug(f"Event: {type(event).__name__}")
