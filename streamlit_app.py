@@ -71,6 +71,16 @@ logger = logging.getLogger(__name__)
 _message_containers = {}
 _message_accumulated_text = {}
 
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for item in st.session_state.messages:
+    if isinstance(item, dict):
+        # User message - simple dict
+        with st.chat_message(item["role"]):
+            st.markdown(item["content"])
+
 def get_time() -> str:
     """Get the current UTC time."""
     current_time = datetime.now(timezone.utc)
@@ -136,18 +146,17 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     logger.info(f"{final_text}")
                     logger.info("---")
                     # Выводим финальное сообщение обычным способом
-                    st.write(f"**[{agent_id} - Message]**")
-                    st.markdown(final_text or "Message created")
-                    st.write("---")
+                    # TO DO
                 return
         
         # Обработка TOOL_CALLS
         if run_step.type != RunStepType.TOOL_CALLS:
             return
 
-        st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
+        #st.write(f"**[{agent_id} - Step]** type={run_step.type}, status={run_step.status}")
 
         if run_step.status == RunStepStatus.FAILED:
+            st.session_state.messages.append({"role": agent_id, "content": run_step})
             st.error(f"{run_step}")
         
         if hasattr(run_step, 'step_details'):
@@ -159,6 +168,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                 for i, tc in enumerate(details.tool_calls):
                     if isinstance(tc, RequiredMcpToolCall):
                         st.write(f"  #{i+1} **MCP:** `{tc.mcp.server_name}.{tc.mcp.name}`")
+                        st.session_state.messages.append({"role": agent_id, "content": f"  #{i+1} **MCP:** `{tc.mcp.server_name}.{tc.mcp.name}`"})
                         # Arguments могут быть строкой или объектом
                         try:
                             if isinstance(tc.mcp.arguments, str):
@@ -257,6 +267,8 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             st.write(f"**[Orchestrator - {event.kind}]**")
             st.write(getattr(event.message, 'text', ''))
             st.write("---")
+            st.session_state.messages.append({"role": "Orchestrator", "content": f"**[Orchestrator - {event.kind}]**"})
+            st.session_state.messages.append({"role": "Orchestrator", "content": getattr(event.message, 'text', '')})
         
         elif isinstance(event, MagenticAgentDeltaEvent):
             agent_id = event.agent_id
@@ -277,6 +289,7 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             agent_id = event.agent_id
             msg = event.message
             st.write(msg.text)
+            st.session_state.messages.append({"role": agent_id, "content": msg.text})
             
             # Очищаем streaming контейнер
             if agent_id in agent_containers:
@@ -290,6 +303,7 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             st.write("=" * 50)
             if event.message is not None:
                 st.markdown(event.message.text)
+                st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
             st.write("=" * 50)
 
         elif isinstance(event, ExecutorInvokedEvent):
@@ -358,6 +372,7 @@ def main():
     )
 
     async def run_workflow(prompt: str):
+
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -369,11 +384,12 @@ def main():
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
             # Создаем отдельные threads для каждого агента
-            facts_identifier_thread = await project_client.agents.threads.create()
-            sql_builder_thread = await project_client.agents.threads.create()
-            sql_validator_thread = await project_client.agents.threads.create()
-            data_extractor_thread = await project_client.agents.threads.create()
-            glossary_thread = await project_client.agents.threads.create()
+            facts_identifier_thread = await project_client.agents.threads.create() if st.session_state.get("facts_identifier_thread", None) is None else st.session_state.facts_identifier_thread
+            sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
+            sql_validator_thread = await project_client.agents.threads.create() if st.session_state.get("sql_validator_thread", None) is None else st.session_state.sql_validator_thread
+            data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
+            glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
+            orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
             
             logger.info(f"Created threads:")
             logger.info(f"  sql_builder: {sql_builder_thread.id}")
@@ -388,6 +404,7 @@ def main():
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=glossary_thread.id) as glossary_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=orchestrator_thread.id) as orchestrator_client,
             ):
                 facts_identifier_agent = facts_identifier_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
@@ -463,6 +480,13 @@ def main():
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
                 )
 
+                st.session_state.facts_identifier_thread = facts_identifier_thread
+                st.session_state.sql_builder_thread = sql_builder_thread
+                st.session_state.sql_validator_thread = sql_validator_thread
+                st.session_state.data_extractor_thread = data_extractor_thread
+                st.session_state.glossary_thread = glossary_thread
+                st.session_state.orchestrator_thread = orchestrator_thread
+
                 # Словари для хранения контейнеров и накопленного текста для каждого агента
                 agent_containers = {}
                 agent_accumulated_text = {}
@@ -485,7 +509,7 @@ def main():
                     )
                     .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
-                        chat_client=OpenAIChatClient(**client_params),
+                        chat_client=orchestrator_client,
                         instructions=ORCHESTRATOR_INSTRUCTIONS,
                         task_ledger_facts_prompt=ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
                         task_ledger_plan_prompt=ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
@@ -513,7 +537,7 @@ def main():
 
     if prompt := st.chat_input("Say something:"):
             # User message - simple dict (not an event)
-            #st.session_state.messages.append({"role": "user", "content": prompt})
+            st.session_state.messages.append({"role": "user", "content": prompt})
             
             with st.chat_message("user"):
                 st.markdown(prompt)
