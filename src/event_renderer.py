@@ -54,6 +54,13 @@ class EventRenderer:
         """Render event to UI."""
         # Magentic events
         if isinstance(event, MagenticOrchestratorMessageEvent):
+            logger.info(f"**[Orchestrator - {event.message}]**")
+            logger.info(f"{event.message.role}")
+            logger.info(f"{event.message.author_name}")
+            logger.info(f"{event.message.author_name}")
+            logger.info(f"{event.message.message_id}")
+            logger.info(f"{event.message.additional_properties}")
+            logger.info(f"{event.message.raw_representation}")
             EventRenderer.render_orchestrator_message(event)
         
         elif isinstance(event, MagenticAgentDeltaEvent):
@@ -81,9 +88,26 @@ class EventRenderer:
     @staticmethod
     def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):
         """Render orchestrator message."""
-        st.write(f"**[Orchestrator - {event.kind}]**")
-        st.write(getattr(event.message, 'text', ''))
-        st.write("---")
+        message_text = getattr(event.message, 'text', '')
+        
+        # Для инструкций - явно показываем, что это команда агентам
+        if event.kind == "instruction":
+            st.write(f"🎯 Agents, please help with the following request:\n\n{message_text}")
+        
+        # Для task_ledger - сворачиваем внутренний контекст
+        elif event.kind == "task_ledger":
+            # Извлекаем первую строку как заголовок или используем дефолтный
+            first_line = message_text.split('\n')[0] if message_text else "Task context"
+            preview = first_line[:80] + "..." if len(first_line) > 80 else first_line
+            
+            with st.expander(f"📋 **Internal context:** {preview}", expanded=False):
+                st.markdown(message_text)
+        
+        else:
+            # Другие типы (plan, facts, progress, etc.)
+            st.write(f"**[Orchestrator - {event.kind}]**")
+            st.write(message_text)
+            st.write("---")
     
     @staticmethod
     def render_agent_delta(event: MagenticAgentDeltaEvent):
