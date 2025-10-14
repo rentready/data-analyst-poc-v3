@@ -7,7 +7,8 @@ from typing import Optional, Callable, Union
 
 from azure.ai.agents.models import (
     RunStepType, RunStepStatus, RunStep, MessageDeltaChunk,
-    RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall
+    RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall,
+    ThreadRun, RunStatus
 )
 
 # Magentic events from agent_framework
@@ -50,14 +51,13 @@ class EventRenderer:
     """Renders run events to Streamlit UI."""
     
     @staticmethod
-    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk']):
+    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """Render event to UI."""
         # Magentic events
         if isinstance(event, MagenticOrchestratorMessageEvent):
             logger.info(f"**[Orchestrator - {event.message}]**")
-            logger.info(f"{event.message.role}")
-            logger.info(f"{event.message.author_name}")
-            logger.info(f"{event.message.author_name}")
+            logger.info(f"Role:{event.message.role}")
+            logger.info(f"Author Name: {event.message.author_name}")
             logger.info(f"{event.message.message_id}")
             logger.info(f"{event.message.additional_properties}")
             logger.info(f"{event.message.raw_representation}")
@@ -75,15 +75,15 @@ class EventRenderer:
         elif isinstance(event, ExecutorInvokedEvent):
             EventRenderer.render_executor_invoked(event)
         
-        # Azure AI events (RunStep, MessageDeltaChunk)
+        # Azure AI events (ThreadRun, RunStep, MessageDeltaChunk)
+        elif isinstance(event, ThreadRun):
+            EventRenderer.render_thread_run(event)
+        
+        elif isinstance(event, (RunStep, MessageDeltaChunk)):
+            EventRenderer.render_runstep_event(event)
+        
         else:
-            try:
-                if isinstance(event, (RunStep, MessageDeltaChunk)):
-                    EventRenderer.render_runstep_event(event)
-                else:
-                    logger.warning(f"Unknown event type: {type(event)}")
-            except ImportError:
-                logger.warning(f"Unknown event type: {type(event)}")
+            logger.warning(f"Unknown event type: {type(event)}")
     
     @staticmethod
     def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):
@@ -92,7 +92,8 @@ class EventRenderer:
         
         # Для инструкций - явно показываем, что это команда агентам
         if event.kind == "instruction":
-            st.write(f"🎯 Agents, please help with the following request:\n\n{message_text}")
+            st.info(f"🎯 Assistants, please help with the following request:", icon=":material/question_mark:")
+            st.write(message_text)
         
         # Для task_ledger - сворачиваем внутренний контекст
         elif event.kind == "task_ledger":
@@ -145,6 +146,25 @@ class EventRenderer:
     def render_executor_invoked(event: ExecutorInvokedEvent):
         """Render executor invoked event."""
         st.write(f"**[Executor Invoked - {event.executor_id}]**")
+    
+    @staticmethod
+    def render_thread_run(run: ThreadRun):
+        """Render ThreadRun event - agent taking on work."""
+        # Получаем информацию о статусе
+        status = run.status if hasattr(run, 'status') else None
+        agent_id = run.agent_id if hasattr(run, 'agent_id') else "Unknown Agent"
+        
+        # Рендерим в зависимости от статуса
+        if status == RunStatus.IN_PROGRESS or status == "in_progress":
+            st.success(f"✅ **{agent_id}** has started working on the task")
+        elif status == RunStatus.QUEUED or status == "queued":
+            #st.info(f"⏳ **{agent_id}** is queued and waiting to start")
+            pass;
+        elif status == RunStatus.COMPLETED or status == "completed":
+            st.success(f"✅ **{agent_id}** has completed the task")
+        elif status == RunStatus.FAILED or status == "failed":
+            error_msg = run.last_error.message if hasattr(run, 'last_error') and run.last_error else "Unknown error"
+            st.error(f"❌ **{agent_id}** failed: {error_msg}")
     
     @staticmethod
     def render_runstep_event(event):

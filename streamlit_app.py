@@ -68,6 +68,7 @@ patch_magentic_for_event_interception()
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
+
 # Контейнеры для streaming сообщений агентов
 _message_containers = {}
 _message_accumulated_text = {}
@@ -93,18 +94,26 @@ def get_time() -> str:
 
 async def on_runstep_event(agent_id: str, event) -> None:
     """
-    Handle RunStep events and MessageDeltaChunk from Azure AI agents.
+    Handle RunStep, ThreadRun and MessageDeltaChunk from Azure AI agents.
     
     Args:
         agent_id: ID of the agent that generated the step
-        event: RunStep or MessageDeltaChunk object from Azure AI
+        event: RunStep, ThreadRun or MessageDeltaChunk object from Azure AI
     """
     try:
         from azure.ai.agents.models import (
             RunStepType,
             RunStepStatus,
-            MessageDeltaChunk
+            MessageDeltaChunk,
+            ThreadRun
         )
+        
+        # Обработка ThreadRun (агент взял задачу) - делегируем в EventRenderer
+        if isinstance(event, ThreadRun):
+            event.agent_id = agent_id
+            EventRenderer.render(event)
+            st.session_state.messages.append(event)
+            return
         
         # Обработка MessageDeltaChunk (streaming текст)
         if isinstance(event, MessageDeltaChunk):
@@ -144,6 +153,8 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     # Рендерим через EventRenderer (свернутое по умолчанию)
                     EventRenderer.render_agent_final_message(agent_id, final_text)
                     
+                    st.session_state.messages.append(event)
+
                     logger.info(f"**[{agent_id} - Message]**")
                     logger.info(f"{final_text}")
                     logger.info("---")
@@ -151,6 +162,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
         
         # Обработка TOOL_CALLS - делегируем в EventRenderer
         EventRenderer.render(event)
+        st.session_state.messages.append(event)
         
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")
@@ -189,6 +201,10 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             st.session_state.messages.append({"role": agent_id, "content": event.message.text})
         
         elif isinstance(event, MagenticOrchestratorMessageEvent):
+            
+            if event.kind == "user_task":
+                pass;
+                return;
             # Рендерим через EventRenderer
             EventRenderer.render(event)
             
@@ -271,7 +287,8 @@ def main():
     )
 
     async def run_workflow(prompt: str):
-
+        _status_viewer = st.empty()
+        _status_viewer.status("Starting workflow...")
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -330,6 +347,7 @@ def main():
                 sql_builder_agent = sql_builder_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="SQL Builder",
+                    user="sql_builder",
                     description=SQL_BUILDER_DESCRIPTION,
                     instructions=SQL_BUILDER_INSTRUCTIONS,
                     tools=[
@@ -340,6 +358,8 @@ def main():
                     temperature=0.1,
                     additional_instructions=SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
                 )
+
+                logger.info(f"Created agent {sql_builder_agent}")
 
                 sql_validtor_agent = sql_validator_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
@@ -429,6 +449,8 @@ def main():
 
                 logger.info(f"Events: {events}")
                 async for event in events:
+                    if isinstance(event, ExecutorInvokedEvent):
+                        logger.info(f"Executor Invoked: {event.executor_id}")
                     logger.info(f"Event: {event}")
                     #st.session_state.messages.append(event.data)
                 logger.info("Workflow completed")
