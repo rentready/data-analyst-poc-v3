@@ -11,9 +11,6 @@ logger = logging.getLogger(__name__)
 
 global_runstep_callback = None  # Callable[[str, RunStep], Awaitable[None]]
 
-# Храним последний обработанный (id, status) для каждого агента
-_last_runstep_state = {}  # {agent_id: (step_id, status)}
-
 # Флаг, показывающий был ли уже применён патч
 _patch_applied = False
 
@@ -77,21 +74,9 @@ def patch_magentic_for_event_interception():
                         from azure.ai.agents.models import RunStep, RunStepDeltaChunk, MessageDeltaChunk
                         
                         if isinstance(raw, RunStep):
-                            runstep_id = getattr(raw, 'id', None)
-                            runstep_status = getattr(raw, 'status', None)
-                            
-                            # Проверяем, не дубликат ли это (тот же id и status)
-                            last_state = _last_runstep_state.get(aid)
-                            if last_state and last_state == (runstep_id, runstep_status):
-                                logger.info(f"   ⏭️  Skipping duplicate: id={runstep_id}, status={runstep_status}")
-                                logger.info(f"Message to skip {update}")
-                            else:
-                                # Сохраняем новое состояние
-                                _last_runstep_state[aid] = (runstep_id, runstep_status)
-                                logger.info(f"   📋 RunStep detected: type={raw.type}, status={runstep_status}, id={runstep_id}")
-                                # Вызываем отдельный обработчик RunStep событий
-                                if global_runstep_callback is not None:
-                                    await global_runstep_callback(aid, raw)
+                            # Вызываем отдельный обработчик RunStep событий
+                            if global_runstep_callback is not None:
+                                await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, RunStepDeltaChunk):
                             logger.info(f"   📝 RunStepDelta detected")
@@ -99,8 +84,8 @@ def patch_magentic_for_event_interception():
                         elif isinstance(raw, MessageDeltaChunk):
                             logger.info(f"   💬 MessageDeltaChunk detected")
                             # Передаем в callback для обработки streaming
-                            #if global_runstep_callback is not None:
-                            #    await global_runstep_callback(aid, raw)
+                            if global_runstep_callback is not None:
+                                await global_runstep_callback(aid, raw)
                         
                         else:
                             logger.info(f"   📝 Unknown event type: {type(raw)}")

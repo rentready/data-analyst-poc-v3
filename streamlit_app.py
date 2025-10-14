@@ -143,6 +143,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     del _message_accumulated_text[agent_id]
                     
                     logger.info(f"**[{agent_id} - Message]**")
+                    st.write(final_text)
                     logger.info(f"{final_text}")
                     logger.info("---")
                     # Выводим финальное сообщение обычным способом
