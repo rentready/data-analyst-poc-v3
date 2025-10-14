@@ -81,6 +81,10 @@ for item in st.session_state.messages:
         # User message - simple dict
         with st.chat_message(item["role"]):
             st.markdown(item["content"])
+    else:
+        # Assistant event - RunEvent object
+        with st.chat_message("assistant"):
+            EventRenderer.render(item)
 
 def get_time() -> str:
     """Get the current UTC time."""
@@ -171,18 +175,8 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
         # Обработка MagenticAgentDeltaEvent требует управления контейнерами
         if isinstance(event, MagenticAgentDeltaEvent):
             agent_id = event.agent_id
-            
-            # Создаем новый контейнер для агента, если его еще нет
-            if agent_id not in agent_containers:
-                st.write(f"**[{agent_id}]**")
-                agent_containers[agent_id] = st.empty()
-                agent_accumulated_text[agent_id] = ""
-            
             # Накапливаем текст
             agent_accumulated_text[agent_id] += event.text
-            
-            # Обновляем контейнер с накопленным текстом
-            agent_containers[agent_id].markdown(agent_accumulated_text[agent_id])
         
         elif isinstance(event, MagenticAgentMessageEvent):
             agent_id = event.agent_id
@@ -192,12 +186,6 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             
             # Сохраняем в session state
             st.session_state.messages.append({"role": agent_id, "content": event.message.text})
-            
-            # Очищаем streaming контейнер
-            if agent_id in agent_containers:
-                agent_containers[agent_id].empty()
-                del agent_containers[agent_id]
-                del agent_accumulated_text[agent_id]
         
         elif isinstance(event, MagenticOrchestratorMessageEvent):
             # Рендерим через EventRenderer

@@ -6,7 +6,8 @@ import logging
 from typing import Optional, Callable, Union
 
 from azure.ai.agents.models import (
-    MessageDeltaChunk
+    RunStepType, RunStepStatus, RunStep, MessageDeltaChunk,
+    RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall
 )
 
 # Magentic events from agent_framework
@@ -70,7 +71,6 @@ class EventRenderer:
         # Azure AI events (RunStep, MessageDeltaChunk)
         else:
             try:
-                from azure.ai.agents.models import RunStep, MessageDeltaChunk
                 if isinstance(event, (RunStep, MessageDeltaChunk)):
                     EventRenderer.render_runstep_event(event)
                 else:
@@ -116,11 +116,6 @@ class EventRenderer:
     def render_runstep_event(event):
         """Render Azure AI RunStep or MessageDeltaChunk event."""
         try:
-            from azure.ai.agents.models import (
-                RunStep, MessageDeltaChunk, RunStepType, RunStepStatus,
-                RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall
-            )
-            
             # Handle MessageDeltaChunk (streaming text) - requires caller to manage containers
             if isinstance(event, MessageDeltaChunk):
                 logger.debug("MessageDeltaChunk received - streaming handled externally")
@@ -136,11 +131,6 @@ class EventRenderer:
     def _render_runstep(run_step):
         """Render Azure AI RunStep."""
         try:
-            from azure.ai.agents.models import (
-                RunStepType, RunStepStatus,
-                RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall
-            )
-            
             # Skip MESSAGE_CREATION steps (handled separately by streaming)
             if run_step.type == RunStepType.MESSAGE_CREATION:
                 return
@@ -167,10 +157,6 @@ class EventRenderer:
     def _render_tool_call_item(tool_call):
         """Render a single tool call from Azure AI RunStep with ORIGINAL design."""
         try:
-            from azure.ai.agents.models import (
-                RequiredMcpToolCall, RequiredFunctionToolCall, RunStepMcpToolCall
-            )
-            
             # Required MCP Tool Call (needs approval) - skip UI rendering here
             if isinstance(tool_call, RequiredMcpToolCall):
                 return
@@ -253,8 +239,6 @@ class EventRenderer:
         st.warning("🔧 MCP Tool requires approval")
         
         try:
-            from azure.ai.agents.models import RequiredMcpToolCall
-            
             for i, tool_call in enumerate(tool_calls):
                 if isinstance(tool_call, RequiredMcpToolCall):
                     server_name = tool_call.mcp.server_name
