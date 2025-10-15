@@ -17,17 +17,36 @@ _patch_applied = False
 # Сохраняем оригинальный метод __init__ до патча
 _original_agent_executor_init = None
 
+# Set to track wrapped callbacks by ID to prevent re-wrapping
+_wrapped_callback_ids = set()
+
 def patch_magentic_for_event_interception():
     """Apply monkey patch to intercept agent streaming events."""
-    global _patch_applied, _original_agent_executor_init
+    global _patch_applied, _original_agent_executor_init, _wrapped_callback_ids
+    
+    # Check if current __init__ is already our patched version
+    current_init = MagenticAgentExecutor.__init__
+    if hasattr(current_init, '_is_patched_by_workaround'):
+        logger.info("✓ MagenticAgentExecutor.__init__ already patched (detected by marker), skipping")
+        _patch_applied = True  # Ensure flag is set
+        return
     
     # Применяем патч только один раз
     if _patch_applied:
-        logger.debug("Patch already applied, skipping")
+        logger.debug("Patch already applied (by flag), skipping")
         return
     
-    # Save original method
-    _original_agent_executor_init = MagenticAgentExecutor.__init__
+    # Save original method ONLY if not already saved
+    if _original_agent_executor_init is None:
+        # Double-check that current __init__ is truly original (no marker)
+        if hasattr(current_init, '_is_patched_by_workaround'):
+            logger.error("ERROR: Attempting to save already-patched method as original!")
+            logger.error("This should not happen - logic error in patch guard")
+            return
+        _original_agent_executor_init = current_init
+        logger.info(f"✓ Saved original MagenticAgentExecutor.__init__ (id={id(_original_agent_executor_init)})")
+    else:
+        logger.info("Original method already saved, using existing reference")
     
     # Patched MagenticAgentExecutor.__init__ to wrap streaming callback
     def _patched_agent_executor_init(
@@ -37,8 +56,30 @@ def patch_magentic_for_event_interception():
         agent_response_callback=None,
         streaming_agent_response_callback=None,
     ):
+        logger.debug(f"_patched_agent_executor_init called for agent '{agent_id}'")
+        logger.debug(f"  streaming_agent_response_callback: {streaming_agent_response_callback}")
+        logger.debug(f"  callback id: {id(streaming_agent_response_callback)}")
+        
         # Wrap the streaming callback if it exists
         if streaming_agent_response_callback is not None:
+            callback_id = id(streaming_agent_response_callback)
+            
+            # Check if callback is already wrapped (prevent cascading wraps)
+            # Use both attribute check and ID tracking
+            if (hasattr(streaming_agent_response_callback, '_is_wrapped_by_agent_executor') or 
+                callback_id in _wrapped_callback_ids):
+                logger.info(f"✓ Callback for agent '{agent_id}' already wrapped (id={callback_id}), skipping wrap")
+                # Call original __init__ with the already-wrapped callback
+                _original_agent_executor_init(
+                    self,
+                    agent,
+                    agent_id,
+                    agent_response_callback,
+                    streaming_agent_response_callback,
+                )
+                return
+            
+            logger.info(f"🔄 Wrapping callback for agent '{agent_id}' (id={callback_id})")
             original_callback = streaming_agent_response_callback
             
             async def wrapped_streaming_callback(
@@ -79,7 +120,8 @@ def patch_magentic_for_event_interception():
                                 await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, RunStepDeltaChunk):
-                            logger.info(f"   📝 RunStepDelta detected")
+                            if global_runstep_callback is not None:
+                                await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, MessageDeltaChunk):
                             logger.info(f"   💬 MessageDeltaChunk detected")
@@ -103,6 +145,13 @@ def patch_magentic_for_event_interception():
                 # Call the original callback
                 await original_callback(aid, update, is_final)
             
+            # Mark the wrapped callback to prevent re-wrapping
+            wrapped_streaming_callback._is_wrapped_by_agent_executor = True
+            
+            # Track the new wrapped callback ID
+            _wrapped_callback_ids.add(id(wrapped_streaming_callback))
+            logger.debug(f"  Added wrapped callback id {id(wrapped_streaming_callback)} to tracking set")
+            
             streaming_agent_response_callback = wrapped_streaming_callback
         
         # Call original __init__ with (possibly wrapped) callback
@@ -116,7 +165,13 @@ def patch_magentic_for_event_interception():
     
     # Apply the patch
     MagenticAgentExecutor.__init__ = _patched_agent_executor_init
+    
+    # Mark the patched function to identify it later
+    _patched_agent_executor_init._is_patched_by_workaround = True
+    
     _patch_applied = True
     
     logger.info("✓ Applied Magentic Agent event interception patch")
+    logger.info(f"  Patched function id: {id(_patched_agent_executor_init)}")
+    logger.info(f"  Original function id: {id(_original_agent_executor_init)}")
     print("✓ Applied Magentic Agent event interception patch")

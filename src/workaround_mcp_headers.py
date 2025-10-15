@@ -40,12 +40,33 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Patch state tracking
+_patch_applied = False
+_original_create_run_options = None
+_original_init = None
+
 def patch_azure_ai_client():
     """Apply monkey patch to support HostedMCPTool headers."""
+    global _patch_applied, _original_create_run_options, _original_init
     
-    # Save original method references
-    _original_create_run_options = AzureAIAgentClient._create_run_options
-    _original_init = AzureAIAgentClient.__init__
+    # Check if already patched by marker
+    if hasattr(AzureAIAgentClient._create_run_options, '_is_patched_by_mcp_workaround'):
+        logger.info("✓ AzureAIAgentClient already patched (detected by marker), skipping")
+        _patch_applied = True
+        return
+    
+    # Check flag
+    if _patch_applied:
+        logger.debug("Patch already applied (by flag), skipping")
+        return
+    
+    # Save original method references ONLY if not already saved
+    if _original_create_run_options is None:
+        _original_create_run_options = AzureAIAgentClient._create_run_options
+        _original_init = AzureAIAgentClient.__init__
+        logger.info("✓ Saved original AzureAIAgentClient methods")
+    else:
+        logger.info("Original methods already saved, using existing references")
 
     async def _patched_create_run_options(
         self,
@@ -179,4 +200,11 @@ def patch_azure_ai_client():
     
     # Apply the patch
     AzureAIAgentClient._create_run_options = _patched_create_run_options
+    
+    # Mark the patched method to identify it later
+    _patched_create_run_options._is_patched_by_mcp_workaround = True
+    
+    _patch_applied = True
+    
+    logger.info("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
     print("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")

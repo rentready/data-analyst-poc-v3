@@ -81,7 +81,8 @@ class EventRenderer:
         
         elif isinstance(event, (RunStep, MessageDeltaChunk)):
             EventRenderer.render_runstep_event(event)
-        
+        elif isinstance(event, str):
+            st.write(event)
         else:
             logger.warning(f"Unknown event type: {type(event)}")
     

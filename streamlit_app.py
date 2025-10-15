@@ -83,6 +83,7 @@ for item in st.session_state.messages:
         with st.chat_message(item["role"]):
             st.markdown(item["content"])
     else:
+        logger.info(f"Item: {item}")
         # Assistant event - RunEvent object
         with st.chat_message("assistant"):
             EventRenderer.render(item)
@@ -113,10 +114,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
         if isinstance(event, ThreadRun):
             event.agent_id = agent_id
             EventRenderer.render(event)
-            st.session_state.messages.append(event)
+            if hasattr(event, 'status'):
+                if event.status != "queued":
+                    st.session_state.messages.append(event)
             return
-        
-        # Обработка MessageDeltaChunk (streaming текст)
+
         if isinstance(event, MessageDeltaChunk):
             if agent_id in _message_containers:
                 # Извлекаем текст из delta
@@ -139,32 +141,37 @@ async def on_runstep_event(agent_id: str, event) -> None:
                 if agent_id not in _message_containers:
                     _message_containers[agent_id] = st.empty()
                     _message_accumulated_text[agent_id] = ""
-                return
             
             # COMPLETED - убираем контейнер, выводим через рендерер
             elif run_step.status == RunStepStatus.COMPLETED:
                 if agent_id in _message_containers:
                     final_text = _message_accumulated_text.get(agent_id, "")
-                    
                     # Убираем streaming контейнер
                     _message_containers[agent_id].empty()
                     del _message_containers[agent_id]
                     del _message_accumulated_text[agent_id]
-                    
-                    # Рендерим через EventRenderer (свернутое по умолчанию)
-                    EventRenderer.render_agent_final_message(agent_id, final_text)
-                    
-                    st.session_state.messages.append(event)
+                    if final_text != "":
+                        
+                        # Рендерим через EventRenderer (свернутое по умолчанию)
+                        EventRenderer.render_agent_final_message(agent_id, final_text)
+                        
+                        # Save only text content for session persistence
+                        st.session_state.messages.append(event)
 
-                    logger.info(f"**[{agent_id} - Message]**")
-                    logger.info(f"{final_text}")
-                    logger.info("---")
-                return
+                        logger.info(f"**[{agent_id} - Message]**")
+                        logger.info(f"{final_text}")
+                        logger.info("---")
+            return
 
         if isinstance(event, RunStep):
             # Обработка TOOL_CALLS - делегируем в EventRenderer
-            EventRenderer.render(event)
-            st.session_state.messages.append(event)
+            if (event.type == RunStepType.TOOL_CALLS and 
+                hasattr(event, 'step_details') and 
+                hasattr(event.step_details, 'tool_calls') and 
+                event.step_details.tool_calls):
+                EventRenderer.render(event)
+                st.session_state.messages.append(event)
+            return;
         
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")

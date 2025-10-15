@@ -14,14 +14,35 @@ from agent_framework._workflows._magentic import (
 
 logger = logging.getLogger(__name__)
 
+# Patch state tracking
+_patch_applied = False
+_original_run_inner_loop = None
+_original_run_inner_loop_locked = None
+_original_init = None
 
 def patch_magentic_orchestrator():
     """Apply monkey patch to fix deadlock in reset_and_replan."""
+    global _patch_applied, _original_run_inner_loop, _original_run_inner_loop_locked, _original_init
     
-    # Save original method references
-    _original_run_inner_loop = MagenticOrchestratorExecutor._run_inner_loop
-    _original_run_inner_loop_locked = MagenticOrchestratorExecutor._run_inner_loop_locked
-    _original_init = MagenticOrchestratorExecutor.__init__
+    # Check if already patched by marker
+    if hasattr(MagenticOrchestratorExecutor.__init__, '_is_patched_by_magentic_workaround'):
+        logger.info("✓ MagenticOrchestratorExecutor already patched (detected by marker), skipping")
+        _patch_applied = True
+        return
+    
+    # Check flag
+    if _patch_applied:
+        logger.debug("Patch already applied (by flag), skipping")
+        return
+    
+    # Save original method references ONLY if not already saved
+    if _original_run_inner_loop is None:
+        _original_run_inner_loop = MagenticOrchestratorExecutor._run_inner_loop
+        _original_run_inner_loop_locked = MagenticOrchestratorExecutor._run_inner_loop_locked
+        _original_init = MagenticOrchestratorExecutor.__init__
+        logger.info("✓ Saved original MagenticOrchestratorExecutor methods")
+    else:
+        logger.info("Original methods already saved, using existing references")
     
     # Patched __init__ to add _needs_reset flag
     def _patched_init(self, *args, **kwargs):
@@ -149,6 +170,13 @@ def patch_magentic_orchestrator():
     MagenticOrchestratorExecutor.__init__ = _patched_init
     MagenticOrchestratorExecutor._run_inner_loop = _patched_run_inner_loop
     MagenticOrchestratorExecutor._run_inner_loop_locked = _patched_run_inner_loop_locked
+    
+    # Mark the patched methods to identify them later
+    _patched_init._is_patched_by_magentic_workaround = True
+    _patched_run_inner_loop._is_patched_by_magentic_workaround = True
+    _patched_run_inner_loop_locked._is_patched_by_magentic_workaround = True
+    
+    _patch_applied = True
     
     logger.info("✓ Applied Magentic Orchestrator deadlock fix")
     print("✓ Applied Magentic Orchestrator deadlock fix")
