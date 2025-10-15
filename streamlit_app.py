@@ -121,17 +121,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
             return
 
         if isinstance(event, ThreadMessage):
-            logger.info(f"ThreadMessage: {event}")
-            logger.info(f"ThreadMessage agent_id: {event.agent_id}")
-            logger.info(f"ThreadMessage role: {event.role}")
-            logger.info(f"ThreadMessage status: {event.status}")
-            logger.info(f"ThreadMessage content: {event.content}")
-            logger.info(f"ThreadMessage content: {event.text_messages}")
-            for text_message in event.text_messages:
-                logger.info(f"ThreadMessage text_message: {text_message.text.value}")
-                st.write(text_message.text.value)
-            event.agent_id = agent_id
-            #EventRenderer.render(event)
+            pass;
             return
 
         if isinstance(event, MessageDeltaChunk):
@@ -171,11 +161,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                         EventRenderer.render_agent_final_message(agent_id, final_text)
                         
                         # Save only text content for session persistence
-                        st.session_state.messages.append(event)
-
-                        logger.info(f"**[{agent_id} - Message]**")
-                        logger.info(f"{final_text}")
-                        logger.info("---")
+                        st.session_state.messages.append({"role": agent_id, "content": final_text})
             return
 
         if isinstance(event, RunStep):
@@ -209,47 +195,21 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
         The `on_event` callback processes events emitted by the workflow.
         Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
         """
-        # Обработка MagenticAgentDeltaEvent требует управления контейнерами
-        if isinstance(event, MagenticAgentDeltaEvent):
-            agent_id = event.agent_id
-            # Накапливаем текст
-            agent_accumulated_text[agent_id] += event.text
         
-        elif isinstance(event, MagenticAgentMessageEvent):
-            agent_id = event.agent_id
-            
-            # Рендерим сообщение через EventRenderer
-            EventRenderer.render(event)
-            
-            # Сохраняем в session state
-            st.session_state.messages.append({"role": agent_id, "content": event.message.text})
-        
-        elif isinstance(event, MagenticOrchestratorMessageEvent):
+        if isinstance(event, MagenticOrchestratorMessageEvent):
             
             if event.kind == "user_task":
                 pass;
                 return;
             # Рендерим через EventRenderer
             EventRenderer.render(event)
-            
-            # Сохраняем в session state
-            st.session_state.messages.append({"role": "Orchestrator", "content": f"**[Orchestrator - {event.kind}]**"})
-            st.session_state.messages.append({"role": "Orchestrator", "content": getattr(event.message, 'text', '')})
+            st.session_state.messages.append(event)
         
         elif isinstance(event, MagenticFinalResultEvent):
-            # Рендерим через EventRenderer
-            EventRenderer.render(event)
-            
-            # Сохраняем в session state
-            if event.message is not None:
-                st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
 
-        elif isinstance(event, ExecutorInvokedEvent):
-            # Рендерим через EventRenderer
-            EventRenderer.render(event)
-        
-        # Только логируем события, не выводим пользователю
-        logger.debug(f"Event: {type(event).__name__}")
+            if event.message is not None:
+                EventRenderer.render(event)
+                st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
     
     return on_event
 
