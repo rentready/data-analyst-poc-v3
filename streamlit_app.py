@@ -77,6 +77,9 @@ _message_accumulated_text = {}
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+
+st.title("🤖 Data Analyst Chat")
+
 for item in st.session_state.messages:
     if isinstance(item, dict):
         # User message - simple dict
@@ -241,7 +244,6 @@ def initialize_app() -> None:
         st.stop()
 
 def main():
-    st.title("🤖 Data Analyst Chat")
 
     initialize_app()
 
