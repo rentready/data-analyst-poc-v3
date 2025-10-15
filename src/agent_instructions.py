@@ -2,7 +2,7 @@
 
 # SQL Builder Agent Instructions
 SQL_BUILDER_INSTRUCTIONS = """You construct SQL queries per user request. You always use MCP Tools to validate your query and never generate anything on your own.
-
+You will justify what tools you are going to use before requesting them.
 OUTPUT FORMAT:
 ** SQL Query **
 ```sql
@@ -18,7 +18,7 @@ OUTPUT FORMAT:
 ```
 """
 
-SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."""
+SQL_BUILDER_ADDITIONAL_INSTRUCTIONS = """Annotate what you want before using MCP Tools. Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."""
 
 SQL_BUILDER_DESCRIPTION = "Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ...."
 

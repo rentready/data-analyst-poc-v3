@@ -107,7 +107,8 @@ async def on_runstep_event(agent_id: str, event) -> None:
             RunStepStatus,
             MessageDeltaChunk,
             ThreadRun,
-            RunStep
+            RunStep,
+            ThreadMessage
         )
         
         # Обработка ThreadRun (агент взял задачу) - делегируем в EventRenderer
@@ -117,6 +118,20 @@ async def on_runstep_event(agent_id: str, event) -> None:
             if hasattr(event, 'status'):
                 if event.status != "queued":
                     st.session_state.messages.append(event)
+            return
+
+        if isinstance(event, ThreadMessage):
+            logger.info(f"ThreadMessage: {event}")
+            logger.info(f"ThreadMessage agent_id: {event.agent_id}")
+            logger.info(f"ThreadMessage role: {event.role}")
+            logger.info(f"ThreadMessage status: {event.status}")
+            logger.info(f"ThreadMessage content: {event.content}")
+            logger.info(f"ThreadMessage content: {event.text_messages}")
+            for text_message in event.text_messages:
+                logger.info(f"ThreadMessage text_message: {text_message.text.value}")
+                st.write(text_message.text.value)
+            event.agent_id = agent_id
+            #EventRenderer.render(event)
             return
 
         if isinstance(event, MessageDeltaChunk):
@@ -340,7 +355,10 @@ def main():
                         2. If not found, try partial match (WHERE name LIKE '%value%')
                         3. If still not found, try similar names
                         
-                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.""",
+                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
+                        
+                        You will justify what tools you are going to use before requesting them.
+                        """,
 
                     tools=[
                         mcp_tool_with_approval,
@@ -348,7 +366,7 @@ def main():
                     ],
                     conversation_id=sql_builder_thread.id,
                     temperature=0.1,
-                    additional_instructions="Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
+                    additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
                 )
 
                 sql_builder_agent = sql_builder_client.create_agent(
