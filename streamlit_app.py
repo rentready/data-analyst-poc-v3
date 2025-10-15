@@ -387,7 +387,6 @@ def main():
                 on_event = create_event_handler(agent_containers, agent_accumulated_text)
                 
                 # Устанавливаем глобальные callbacks для workaround модуля
-                agent_executor_workaround.global_unified_callback = on_event
                 agent_executor_workaround.global_runstep_callback = on_runstep_event
 
                 workflow = (
