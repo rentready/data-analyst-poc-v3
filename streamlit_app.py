@@ -80,16 +80,20 @@ if "messages" not in st.session_state:
 
 st.title("🤖 Data Analyst Chat")
 
+current_chat = st.empty()
+prev_agent_id = None
+prev_role = None
 for item in st.session_state.messages:
-    if isinstance(item, dict):
-        # User message - simple dict
-        with st.chat_message(item["role"]):
-            st.markdown(item["content"])
-    else:
-        logger.info(f"Item: {item}")
-        # Assistant event - RunEvent object
-        with st.chat_message("assistant"):
-            EventRenderer.render(item)
+    if (prev_agent_id != item["agent_id"] or prev_role != item["role"]):
+        prev_role = item["role"]
+        prev_agent_id = item["agent_id"]
+        current_chat = st.chat_message(item["role"])
+
+    content = item["event"] if "event" in item else item.get("content", None)
+    if content is None:
+        continue;
+    with current_chat:
+        EventRenderer.render(content)
 
 def get_time() -> str:
     """Get the current UTC time."""
@@ -97,6 +101,7 @@ def get_time() -> str:
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
 st.session_state.current_chat = st.empty()
+st.session_state.current_role = st.empty()
 
 async def on_runstep_event(agent_id: str, event) -> None:
     """
@@ -122,11 +127,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
             event.agent_id = agent_id
             if hasattr(event, 'status'):
                 if event.status == RunStatus.QUEUED:
-                    st.session_state.current_chat = st.chat_message("agent")
+                    st.session_state.current_chat = st.chat_message("🤖")
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
                 else:
-                    st.session_state.messages.append(event)
+                    st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
                     with st.session_state.current_chat:
                         EventRenderer.render(event)
             return
@@ -172,7 +177,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                             EventRenderer.render_agent_final_message(agent_id, final_text)
                         
                         # Save only text content for session persistence
-                        st.session_state.messages.append({"role": agent_id, "content": final_text})
+                        st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
             return
 
         if isinstance(event, RunStep):
@@ -184,7 +189,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
 
                 with st.session_state.current_chat:
                     EventRenderer.render(event)
-                st.session_state.messages.append(event)
+                st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
             return;
         
     except ImportError:
@@ -217,14 +222,14 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
             # Рендерим через EventRenderer
             with st.chat_message("assistant"):
                 EventRenderer.render(event)
-                st.session_state.messages.append(event)
+                st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
         
         elif isinstance(event, MagenticFinalResultEvent):
 
             if event.message is not None:
                 with st.chat_message("assistant"):
                     EventRenderer.render(event)
-                    st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
+                    st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
     
     return on_event
 
@@ -434,13 +439,13 @@ def main():
 
     if prompt := st.chat_input("Say something:"):
             # User message - simple dict (not an event)
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            st.session_state.messages.append({"role": "user", "content": prompt, "agent_id": None})
             
             with st.chat_message("user"):
                 st.markdown(prompt)
             
             
-            # Используем sync-over-async для Streamlit
+            # Используем sync-over- async для Streamlit
             #nest_asyncio.apply()
             asyncio.run(run_workflow(prompt))
         
