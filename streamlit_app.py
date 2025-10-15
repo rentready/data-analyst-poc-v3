@@ -96,6 +96,8 @@ def get_time() -> str:
     current_time = datetime.now(timezone.utc)
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
+st.session_state.current_chat = st.empty()
+
 async def on_runstep_event(agent_id: str, event) -> None:
     """
     Handle RunStep, ThreadRun and MessageDeltaChunk from Azure AI agents.
@@ -111,16 +113,22 @@ async def on_runstep_event(agent_id: str, event) -> None:
             MessageDeltaChunk,
             ThreadRun,
             RunStep,
+            RunStatus,
             ThreadMessage
         )
         
         # Обработка ThreadRun (агент взял задачу) - делегируем в EventRenderer
         if isinstance(event, ThreadRun):
             event.agent_id = agent_id
-            EventRenderer.render(event)
             if hasattr(event, 'status'):
-                if event.status != "queued":
+                if event.status == RunStatus.QUEUED:
+                    st.session_state.current_chat = st.chat_message("agent")
+                elif event.status == RunStatus.COMPLETED:
+                    st.session_state.current_chat = st.empty()
+                else:
                     st.session_state.messages.append(event)
+                    with st.session_state.current_chat:
+                        EventRenderer.render(event)
             return
 
         if isinstance(event, ThreadMessage):
@@ -147,7 +155,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
             # IN_PROGRESS - создаем контейнер для streaming
             if run_step.status == RunStepStatus.IN_PROGRESS:
                 if agent_id not in _message_containers:
-                    _message_containers[agent_id] = st.empty()
+                    _message_containers[agent_id] = st.session_state.current_chat.empty()
                     _message_accumulated_text[agent_id] = ""
             
             # COMPLETED - убираем контейнер, выводим через рендерер
@@ -159,9 +167,9 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     del _message_containers[agent_id]
                     del _message_accumulated_text[agent_id]
                     if final_text != "":
-                        
+                        with st.session_state.current_chat:
                         # Рендерим через EventRenderer (свернутое по умолчанию)
-                        EventRenderer.render_agent_final_message(agent_id, final_text)
+                            EventRenderer.render_agent_final_message(agent_id, final_text)
                         
                         # Save only text content for session persistence
                         st.session_state.messages.append({"role": agent_id, "content": final_text})
@@ -173,7 +181,9 @@ async def on_runstep_event(agent_id: str, event) -> None:
                 hasattr(event, 'step_details') and 
                 hasattr(event.step_details, 'tool_calls') and 
                 event.step_details.tool_calls):
-                EventRenderer.render(event)
+
+                with st.session_state.current_chat:
+                    EventRenderer.render(event)
                 st.session_state.messages.append(event)
             return;
         
@@ -205,14 +215,16 @@ def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
                 pass;
                 return;
             # Рендерим через EventRenderer
-            EventRenderer.render(event)
-            st.session_state.messages.append(event)
+            with st.chat_message("assistant"):
+                EventRenderer.render(event)
+                st.session_state.messages.append(event)
         
         elif isinstance(event, MagenticFinalResultEvent):
 
             if event.message is not None:
-                EventRenderer.render(event)
-                st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
+                with st.chat_message("assistant"):
+                    EventRenderer.render(event)
+                    st.session_state.messages.append({"role": "Orchestrator", "content": event.message.text})
     
     return on_event
 
@@ -427,10 +439,10 @@ def main():
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            with st.chat_message("assistant"):
-                # Используем sync-over-async для Streamlit
-                #nest_asyncio.apply()
-                asyncio.run(run_workflow(prompt))
+            
+            # Используем sync-over-async для Streamlit
+            #nest_asyncio.apply()
+            asyncio.run(run_workflow(prompt))
         
 
 if __name__ == "__main__":
