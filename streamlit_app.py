@@ -635,6 +635,7 @@ def main():
             sql_validator_thread = await project_client.agents.threads.create() if st.session_state.get("sql_validator_thread", None) is None else st.session_state.sql_validator_thread
             data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
             glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
+            knowledge_base_thread = await project_client.agents.threads.create() if st.session_state.get("knowledge_base_thread", None) is None else st.session_state.knowledge_base_thread
             orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
 
             
@@ -645,78 +646,30 @@ def main():
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=glossary_thread.id) as glossary_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=knowledge_base_thread.id) as knowledge_base_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=orchestrator_thread.id) as orchestrator_client,
             ):
-                # Prepare tools for facts identifier
-                facts_tools = [mcp_tool_with_approval, get_time]
+                # Facts Identifier - NO file_search, only MCP
+                facts_instructions = f"""for the user request: {prompt}
                 
-                # Add tool_resources if vector store is configured
-                facts_tool_resources = None
-                if vector_store_id:
-                    facts_tool_resources = {
-                        "file_search": {
-                            "vector_store_ids": [vector_store_id]
-                        }
-                    }
-                    # Add file_search as a tool specification
-                    facts_tools.append({"type": "file_search"})
+                Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
+                1. Try exact match first (WHERE name = 'value')
+                2. If not found, try partial match (WHERE name LIKE '%value%')
+                3. If still not found, try similar names
                 
-                # Update instructions based on vector store availability
+                Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
+                
+                You will justify what tools you are going to use before requesting them.
+                """
+                
                 facts_additional = "Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
-                
-                if vector_store_id:
-                    facts_instructions = f"""
-                    🚨 STOP! MANDATORY FIRST ACTION REQUIRED! 🚨
-                    
-                    Before doing ANYTHING else, you MUST search the knowledge base for these terms from the user request:
-                    {prompt}
-                    
-                    YOUR FIRST ACTION: Use file_search tool to search for ANY unusual terms like:
-                    - "розовые слоны" (pink elephants)
-                    - Any other slang, nicknames, or business jargon
-                    
-                    The knowledge base contains entity mappings that tell you which database tables correspond to slang terms.
-                    
-                    EXAMPLE:
-                    User asks: "Сколько розовых слонов было летом 2025?"
-                    
-                    Step 1: You search file_search for "розовые слоны"
-                    Step 2: Knowledge base returns: "розовые слоны = msdyn_workorder table"
-                    Step 3: You query msdyn_workorder table for summer 2025 data
-                    
-                    DO NOT SKIP STEP 1! Search the knowledge base first!
-                    
-                    After checking the knowledge base:
-                    - If you find a mapping → use that table immediately
-                    - If you find nothing → proceed with MCP Tools to search database
-                    
-                    Then identify exact entities and validate with SELECT TOP 1.
-                    """
-                    facts_additional = "🚨 FIRST ACTION: Search knowledge base with file_search tool! Query for unusual terms mentioned in request. " + facts_additional
-                else:
-                    facts_instructions = f"""for the user request: {prompt}
-                    
-                    Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
-                    1. Try exact match first (WHERE name = 'value')
-                    2. If not found, try partial match (WHERE name LIKE '%value%')
-                    3. If still not found, try similar names
-                    
-                    Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
-                    
-                    You will justify what tools you are going to use before requesting them.
-                    """
-                
-                facts_description = "Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities."
-                if vector_store_id:
-                    facts_description += " You have access to a knowledge base - use it to find entity mappings and terminology before querying the database."
                 
                 facts_identifier_agent = facts_identifier_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Facts Identifier",
-                    description=facts_description,
+                    description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
                     instructions=facts_instructions,
-                    tools=facts_tools,
-                    tool_resources=facts_tool_resources,
+                    tools=[mcp_tool_with_approval, get_time],
                     conversation_id=sql_builder_thread.id,
                     temperature=0.1,
                     additional_instructions=facts_additional
@@ -753,78 +706,126 @@ def main():
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
 
-                # Prepare tools for glossary
-                glossary_tools = [get_time]
-                
-                # Add tool_resources if vector store is configured
-                glossary_tool_resources = None
-                glossary_additional = GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS
-                if vector_store_id:
-                    glossary_tool_resources = {
-                        "file_search": {
-                            "vector_store_ids": [vector_store_id]
-                        }
-                    }
-                    # Add file_search as a tool specification
-                    glossary_tools.append({"type": "file_search"})
-                    glossary_additional = """
-🚨 CRITICAL: SEARCH KNOWLEDGE BASE FIRST! 🚨
-
-Before saying a term has no definition, you MUST use file_search tool to check the knowledge base!
-
-The knowledge base contains:
-- Entity mappings (e.g., "розовые слоны" = "msdyn_workorder")  
-- Business slang → database tables
-- Alternative terminology and synonyms
-
-MANDATORY WORKFLOW:
-1. User asks about unfamiliar term (e.g., "розовые слоны", "pink elephants")
-2. YOU MUST call file_search tool to search for this term
-3. If found in knowledge base → provide the mapping/definition from there
-4. If NOT found in knowledge base → use your standard glossary definitions
-5. NEVER say "no definition" without checking file_search first!
-
-Example: User asks "what is розовые слоны?"
-→ Call file_search("розовые слоны") 
-→ Return result from knowledge base
-
-""" + GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS
-                
+                # Glossary - NO file_search
                 glossary_agent = glossary_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
                     instructions=st.secrets["glossary"]["instructions"],
-                    tools=glossary_tools,
-                    tool_resources=glossary_tool_resources,
+                    tools=[get_time],
                     conversation_id=glossary_thread.id,
                     temperature=0.1,
-                    additional_instructions=glossary_additional,
+                    additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
                 )
+
+                # Knowledge Base Agent - ONLY file_search, NO MCP
+                knowledge_base_agent = None
+                if vector_store_id:
+                    knowledge_base_agent = knowledge_base_client.create_agent(
+                        model=config[MODEL_DEPLOYMENT_NAME_KEY],
+                        name="Knowledge Base Agent",
+                        description="Search knowledge base for entity mappings and domain information. Returns exact information from knowledge base files.",
+                        instructions="""You are a domain knowledge base search assistant.
+
+CRITICAL INSTRUCTIONS:
+1. You have a Q&A knowledge base uploaded as files
+2. The knowledge base contains EXACT entity mappings (business terms → database tables)
+3. When asked about entity mappings, search your knowledge base using file_search tool
+4. The format is "Q: question / A: answer"
+5. QUOTE the exact answer from the knowledge base with [citation]
+6. DO NOT make up answers - only use information from the knowledge base
+7. If you find the answer → cite it exactly with source
+8. If you don't find anything → say "I don't have information about [term]"
+
+Example:
+User asks: "What is розовые слоны?"
+You search the knowledge base and find: "Q: What is 'розовые слоны'? A: 'розовые слоны' (pink elephants) is business slang that maps to the msdyn_workorder database table."
+You respond: "According to the knowledge base [citation], 'розовые слоны' (pink elephants) maps to the msdyn_workorder database table."
+
+NEVER invent table names or information not found in the knowledge base!""",
+                        tools=[{"type": "file_search"}],
+                        tool_resources={
+                            "file_search": {
+                                "vector_store_ids": [vector_store_id]
+                            }
+                        },
+                        conversation_id=knowledge_base_thread.id,
+                        temperature=0.0
+                    )
+                    logger.info(f"Created Knowledge Base Agent with file_search: {knowledge_base_agent.id}")
 
                 st.session_state.facts_identifier_thread = facts_identifier_thread
                 st.session_state.sql_builder_thread = sql_builder_thread
                 st.session_state.sql_validator_thread = sql_validator_thread
                 st.session_state.data_extractor_thread = data_extractor_thread
                 st.session_state.glossary_thread = glossary_thread
+                st.session_state.knowledge_base_thread = knowledge_base_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
                 
                 # Устанавливаем глобальные callbacks для workaround модуля
                 agent_executor_workaround.global_runstep_callback = on_runstep_event
 
+                # Build participants dict
+                participants_dict = {
+                    "facts_identifier_agent": facts_identifier_agent,
+                    "sql_builder": sql_builder_agent,
+                    "data_extractor": data_extractor_agent,
+                    "glossary": glossary_agent,
+                }
+                
+                # Add knowledge_base agent if configured
+                if knowledge_base_agent:
+                    participants_dict["knowledge_base"] = knowledge_base_agent
+
+                # Orchestrator instructions with knowledge_base context
+                if knowledge_base_agent:
+                    # Override workflow to make Knowledge Base Agent the FIRST step
+                    orchestrator_instructions = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
+
+🔴 CRITICAL: MANDATORY WORKFLOW 🔴
+
+STEP 0 (MANDATORY): knowledge_base - ALWAYS START HERE!
+- BEFORE anything else, ask 'knowledge_base' agent about ANY unfamiliar or domain-specific terms in the request
+- Knowledge Base contains:
+  * Entity mappings (business slang → database tables)
+  * Business rules and logic
+  * Relationships between entities
+  * Domain-specific terminology
+- Example: If user mentions "розовые слоны", "property", "job profile" → ASK knowledge_base FIRST!
+
+STEP 1: glossary - Get business term definitions and table/field names (use knowledge_base info if available)
+
+STEP 2: facts_identifier_agent - Use glossary info + knowledge_base info + MCP tools to identify all facts
+
+STEP 3: sql_builder <> data_extractor
+
+HANDOFF FORMAT (enforce this for all agents):
+** SQL Query **
+```sql
+{sql_query}
+```
+** Feedback **
+```
+{feedback}
+```
+
+Your job:
+1. 🔴 ALWAYS START by asking 'knowledge_base' about unfamiliar terms or domain concepts
+2. THEN use glossary to get business terms and table/field names
+3. THEN use facts_identifier with all gathered info to find facts (row IDs, names, exact values)
+4. PASS all identified facts (tables, fields, IDs, names) to the agents
+5. Remember: specialists don't know what you already know - provide all context!
+"""
+                else:
+                    orchestrator_instructions = ORCHESTRATOR_INSTRUCTIONS
+
                 workflow = (
                     MagenticBuilder()
-                    .participants(
-                        facts_identifier_agent = facts_identifier_agent,
-                        sql_builder = sql_builder_agent,
-                        data_extractor = data_extractor_agent,
-                        glossary = glossary_agent,
-                    )
+                    .participants(**participants_dict)
                     .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
                         chat_client=orchestrator_client,
-                        instructions=ORCHESTRATOR_INSTRUCTIONS,
-
+                        instructions=orchestrator_instructions,
                         max_round_count=15,
                         max_stall_count=4,
                         max_reset_count=2,
