@@ -284,7 +284,6 @@ def main():
         if base_url:
             client_params["base_url"] = base_url
 
-        logger.info(f"MODEL: {config[MODEL_DEPLOYMENT_NAME_KEY]}")
         async with (
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
@@ -296,12 +295,7 @@ def main():
             data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
             glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
             orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
-            
-            logger.info(f"Created threads:")
-            logger.info(f"  sql_builder: {sql_builder_thread.id}")
-            logger.info(f"  sql_validator: {sql_validator_thread.id}")
-            logger.info(f"  data_extractor: {data_extractor_thread.id}")
-            logger.info(f"  glossary: {glossary_thread.id}")
+
             
             # Создаем отдельные клиенты для каждого агента
             async with (
@@ -408,15 +402,7 @@ def main():
                     .build()
                 )
 
-                events = workflow.run_stream(prompt)
-
-                logger.info(f"Events: {events}")
-                async for event in events:
-                    if isinstance(event, ExecutorInvokedEvent):
-                        logger.info(f"Executor Invoked: {event.executor_id}")
-                    logger.info(f"Event: {event}")
-                    #st.session_state.messages.append(event.data)
-                logger.info("Workflow completed")
+                await workflow.run(prompt)
                     
 
     if prompt := st.chat_input("Say something:"):
