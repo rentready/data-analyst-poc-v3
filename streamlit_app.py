@@ -767,7 +767,28 @@ def main():
                     }
                     # Add file_search as a tool specification
                     glossary_tools.append({"type": "file_search"})
-                    glossary_additional += " You have access to a knowledge base with domain-specific terminology and definitions. Search your knowledge for relevant context when defining terms."
+                    glossary_additional = """
+🚨 CRITICAL: SEARCH KNOWLEDGE BASE FIRST! 🚨
+
+Before saying a term has no definition, you MUST use file_search tool to check the knowledge base!
+
+The knowledge base contains:
+- Entity mappings (e.g., "розовые слоны" = "msdyn_workorder")  
+- Business slang → database tables
+- Alternative terminology and synonyms
+
+MANDATORY WORKFLOW:
+1. User asks about unfamiliar term (e.g., "розовые слоны", "pink elephants")
+2. YOU MUST call file_search tool to search for this term
+3. If found in knowledge base → provide the mapping/definition from there
+4. If NOT found in knowledge base → use your standard glossary definitions
+5. NEVER say "no definition" without checking file_search first!
+
+Example: User asks "what is розовые слоны?"
+→ Call file_search("розовые слоны") 
+→ Return result from knowledge base
+
+""" + GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS
                 
                 glossary_agent = glossary_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
