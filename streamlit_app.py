@@ -112,12 +112,12 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     pass;
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
-                    SpinnerManager.start("Thinking about next steps...")
+                    SpinnerManager.start("Planning next steps...")
                 else:
                     st.session_state.current_chat = st.chat_message("🤖")
                     st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
                     with st.session_state.current_chat:
-                        EventRenderer.render(event, auto_start_spinner="Thinking...")
+                        EventRenderer.render(event, auto_start_spinner="Processing...")
             return
 
         if isinstance(event, ThreadMessage):
@@ -178,7 +178,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     SpinnerManager.stop()
                 else:
                     with st.session_state.current_chat:
-                        SpinnerManager.start("Invoking a tool...")
+                        SpinnerManager.start("Running tool...")
 
             return
         
@@ -197,11 +197,11 @@ async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
     if isinstance(event, MagenticOrchestratorMessageEvent):
         
         if event.kind == "user_task":
-            SpinnerManager.start("Thinking...")
+            SpinnerManager.start("Analyzing your request...")
             return;
         # Render through EventRenderer
         with st.chat_message("assistant"):
-            EventRenderer.render(event, auto_start_spinner="Handing the task to the assistants...")
+            EventRenderer.render(event, auto_start_spinner="Delegating to assistants...")
             st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
     
     elif isinstance(event, MagenticFinalResultEvent):
@@ -269,7 +269,7 @@ def main():
     )
 
     async def run_workflow(prompt: str):
-        SpinnerManager.start("Planning the task...")
+        SpinnerManager.start("Planning your request...")
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
