@@ -124,8 +124,6 @@ def patch_magentic_for_event_interception():
                                 await global_runstep_callback(aid, raw)
                         
                         elif isinstance(raw, MessageDeltaChunk):
-                            logger.info(f"   💬 MessageDeltaChunk detected")
-                            # Передаем в callback для обработки streaming
                             if global_runstep_callback is not None:
                                 await global_runstep_callback(aid, raw)
 

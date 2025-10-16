@@ -127,10 +127,11 @@ async def on_runstep_event(agent_id: str, event) -> None:
             event.agent_id = agent_id
             if hasattr(event, 'status'):
                 if event.status == RunStatus.QUEUED:
-                    st.session_state.current_chat = st.chat_message("🤖")
+                    pass;
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
                 else:
+                    st.session_state.current_chat = st.chat_message("🤖")
                     st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
                     with st.session_state.current_chat:
                         EventRenderer.render(event)
@@ -174,7 +175,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     if final_text != "":
                         with st.session_state.current_chat:
                         # Рендерим через EventRenderer (свернутое по умолчанию)
-                            EventRenderer.render_agent_final_message(agent_id, final_text)
+                            EventRenderer.render(final_text)
                         
                         # Save only text content for session persistence
                         st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})

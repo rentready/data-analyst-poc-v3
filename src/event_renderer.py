@@ -98,12 +98,8 @@ class EventRenderer:
         
         # Для task_ledger - сворачиваем внутренний контекст
         elif event.kind == "task_ledger":
-            # Извлекаем первую строку как заголовок или используем дефолтный
-            first_line = message_text.split('\n')[0] if message_text else "Task context"
-            preview = first_line[:80] + "..." if len(first_line) > 80 else first_line
-            
-            with st.expander(f"📋 **Internal context:** {preview}", expanded=False):
-                st.markdown(message_text)
+            st.info(f"📋 **Context**")
+            st.markdown(message_text)
         
         else:
             # Другие типы (plan, facts, progress, etc.)
@@ -130,18 +126,15 @@ class EventRenderer:
         preview = message_text[:100] + "..." if len(message_text) > 100 else message_text
         
         # Сворачивающийся блок с превью
-        with st.expander(f"💬 **{agent_id}** - {preview}", expanded=False):
+        with st.expander(f"{preview}", expanded=False):
             st.markdown(message_text)
     
     @staticmethod
     def render_final_result(event: MagenticFinalResultEvent):
         """Render final workflow result."""
-        st.write("=" * 50)
-        st.write("**FINAL RESULT:**")
-        st.write("=" * 50)
+        st.info("**FINAL RESULT:**")
         if event.message is not None:
             st.markdown(event.message.text)
-        st.write("=" * 50)
     
     @staticmethod
     def render_executor_invoked(event: ExecutorInvokedEvent):
@@ -157,7 +150,7 @@ class EventRenderer:
         
         # Рендерим в зависимости от статуса
         if status == RunStatus.IN_PROGRESS or status == "in_progress":
-            st.success(f"✅ **{agent_id}** has started working on the task")
+            st.success(f"**{agent_id}** has started working on the task")
         elif status == RunStatus.QUEUED or status == "queued":
             #st.info(f"⏳ **{agent_id}** is queued and waiting to start")
             pass;
