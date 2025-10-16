@@ -1,0 +1,40 @@
+=== ENTITY TYPE MAPPINGS FOR RENTREADY DATABASE ===
+
+This document contains mappings between business terminology, slang terms, and database entity types.
+
+---
+
+MAPPING: Pink Elephants / Розовые Слоны
+- Synonyms: "pink elephants", "розовый слон", "розовые слоны", "pink elephant"
+- Entity Type: msdyn_workorder
+- Database Table: msdyn_workorder
+- Description: Work orders - service requests for property maintenance or repair
+- Fields: msdyn_workorderid, msdyn_name, msdyn_serviceaccount, createdon, msdyn_systemstatus
+- Usage: When user asks about "розовые слоны" or "pink elephants", they are referring to work orders in the msdyn_workorder table.
+
+Example queries:
+- "How many pink elephants this summer?" → Count work orders: SELECT COUNT(*) FROM msdyn_workorder WHERE createdon BETWEEN '2025-06-01' AND '2025-08-31'
+- "Show me розовые слоны" → Query work orders: SELECT * FROM msdyn_workorder
+
+---
+
+MAPPING: Job Profile / Turn
+- Synonyms: "job profile", "turn", "turnover", "rr_jobprofile"
+- Entity Type: rr_jobprofile
+- Database Table: rr_jobprofile
+- Description: Template for common work order types with predefined settings and pricing
+- Fields: rr_jobprofileid, rr_name, rr_serviceproperty, rr_moveoutdate, createdon
+
+---
+
+MAPPING: Property
+- Synonyms: "property", "account", "service account"
+- Entity Type: account
+- Database Table: account
+- Description: Physical location where service is performed
+- Fields: accountid, name, address1_city, address1_stateorprovince
+
+---
+
+END OF MAPPINGS
+

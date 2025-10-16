@@ -1,0 +1,30 @@
+{
+  "entity_mappings": [
+    {
+      "slang_terms": ["pink elephants", "розовый слон", "розовые слоны", "pink elephant"],
+      "entity_type": "msdyn_workorder",
+      "database_table": "msdyn_workorder",
+      "description": "Work orders - service requests for property maintenance or repair. When user mentions pink elephants or розовые слоны, they are referring to work orders.",
+      "key_fields": ["msdyn_workorderid", "msdyn_name", "msdyn_serviceaccount", "createdon", "msdyn_systemstatus"],
+      "example_queries": [
+        "How many pink elephants this summer? → SELECT COUNT(*) FROM msdyn_workorder WHERE createdon BETWEEN '2025-06-01' AND '2025-08-31'",
+        "Show me розовые слоны → SELECT * FROM msdyn_workorder"
+      ]
+    },
+    {
+      "slang_terms": ["job profile", "turn", "turnover", "rr_jobprofile"],
+      "entity_type": "rr_jobprofile",
+      "database_table": "rr_jobprofile",
+      "description": "Template for common work order types with predefined settings and pricing",
+      "key_fields": ["rr_jobprofileid", "rr_name", "rr_serviceproperty", "rr_moveoutdate", "createdon"]
+    },
+    {
+      "slang_terms": ["property", "account", "service account"],
+      "entity_type": "account",
+      "database_table": "account",
+      "description": "Physical location where service is performed",
+      "key_fields": ["accountid", "name", "address1_city", "address1_stateorprovince"]
+    }
+  ]
+}
+

@@ -328,63 +328,10 @@ async def get_vector_store_files(vector_store_id: str, config: dict):
         return []
 
 
-async def download_file_from_vector_store(file_id: str, config: dict):
-    """
-    Download file content from Vector Store using REST API.
-    
-    Args:
-        file_id: ID of the file to download
-        config: Configuration dictionary with project endpoint
-        
-    Returns:
-        Tuple of (file_content_bytes, filename) or (None, None) on error
-    """
-    try:
-        async with DefaultAzureCredential() as credential:
-            # Get token for authentication
-            token = await credential.get_token("https://ai.azure.com/.default")
-            
-            # Build REST API URL
-            endpoint = config[PROJ_ENDPOINT_KEY]
-            
-            # First get file details to get filename
-            file_url = f"{endpoint}/files/{file_id}?api-version=v1"
-            
-            import aiohttp
-            headers = {
-                'Authorization': f'Bearer {token.token}',
-                'Content-Type': 'application/json'
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                # Get file metadata
-                async with session.get(file_url, headers=headers) as response:
-                    if response.status == 200:
-                        file_details = await response.json()
-                        filename = file_details.get('filename', 'unknown_file')
-                    else:
-                        logger.error(f'Failed to get file details: HTTP {response.status}')
-                        return None, None
-                
-                # Download file content
-                content_url = f"{endpoint}/files/{file_id}/content?api-version=v1"
-                async with session.get(content_url, headers=headers) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        return content, filename
-                    else:
-                        logger.error(f'Failed to download file: HTTP {response.status}')
-                        return None, None
-                
-    except Exception as e:
-        logger.error(f'Failed to download file: {e}')
-        return None, None
-
-
 async def upload_file_to_vector_store(file_data: bytes, filename: str, vector_store_id: str, config: dict):
     """
-    Upload file to AI Project and add to Vector Store using REST API.
-    Reference: https://learn.microsoft.com/en-us/rest/api/aifoundry/
+    Upload file to AI Project and add to Vector Store.
+    Uses Python SDK for file upload (properly handles filename) and REST API for adding to Vector Store.
     
     Args:
         file_data: File content as bytes
@@ -392,69 +339,69 @@ async def upload_file_to_vector_store(file_data: bytes, filename: str, vector_st
         vector_store_id: ID of the Vector Store
         config: Configuration dictionary with project endpoint
     """
+    import tempfile
+    import os
+    
+    temp_file_path = None
     try:
         async with DefaultAzureCredential() as credential:
-            # Get token for authentication
-            token = await credential.get_token("https://ai.azure.com/.default")
-            
-            # Build REST API URL
-            endpoint = config[PROJ_ENDPOINT_KEY]
-            
-            import aiohttp
-            from aiohttp import FormData
-            headers = {
-                'Authorization': f'Bearer {token.token}'
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                # Step 1: Upload file to AI Project
-                upload_url = f"{endpoint}/files?api-version=v1"
+            async with AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client:
+                # Step 1: Save file temporarily (SDK requires file path, not BytesIO)
+                # Create temp directory and save file with original name
+                temp_dir = tempfile.mkdtemp()
+                temp_file_path = os.path.join(temp_dir, filename)
+                with open(temp_file_path, 'wb') as temp_file:
+                    temp_file.write(file_data)
                 
-                # Create multipart form data with proper filename
-                form = FormData()
-                form.add_field(
-                    name='file',
-                    value=file_data,
-                    filename=filename,
-                    content_type='application/octet-stream'
+                # Step 2: Upload file to AI Project using SDK
+                # SDK properly handles filename in multipart/form-data
+                uploaded_file = await project_client.agents.files.upload_and_poll(
+                    file_path=temp_file_path,
+                    purpose='assistants'
                 )
-                form.add_field('purpose', 'assistants')
                 
-                async with session.post(upload_url, headers=headers, data=form) as response:
-                    if response.status == 200:
-                        file_info = await response.json()
-                        file_id = file_info.get('id')
-                        uploaded_filename = file_info.get('filename', 'NO_FILENAME')
-                        logger.info(f'Uploaded file to AI Project: {file_id}, filename in response: {uploaded_filename}')
-                    else:
-                        error_text = await response.text()
-                        logger.error(f'Failed to upload file: HTTP {response.status}, {error_text}')
-                        raise Exception(f'File upload failed: HTTP {response.status}')
+                file_id = uploaded_file.id
+                logger.info(f'Uploaded file to AI Project: {file_id}, filename: {uploaded_file.filename}')
                 
-                # Step 2: Add file to Vector Store
+                # Step 3: Add file to Vector Store using REST API
+                # (SDK doesn't have stable API for this yet)
+                token = await credential.get_token("https://ai.azure.com/.default")
+                endpoint = config[PROJ_ENDPOINT_KEY]
                 vs_file_url = f"{endpoint}/vector_stores/{vector_store_id}/files?api-version=v1"
                 
-                # Add JSON content type for this request
-                vs_headers = {
+                import aiohttp
+                headers = {
                     'Authorization': f'Bearer {token.token}',
                     'Content-Type': 'application/json'
                 }
                 
                 payload = {'file_id': file_id}
                 
-                async with session.post(vs_file_url, headers=vs_headers, json=payload) as response:
-                    if response.status == 200:
-                        vs_file_info = await response.json()
-                        logger.info(f'Added file {file_id} to vector store {vector_store_id}')
-                        return file_id, vs_file_info.get('id')
-                    else:
-                        error_text = await response.text()
-                        logger.error(f'Failed to add file to vector store: HTTP {response.status}, {error_text}')
-                        raise Exception(f'Add to vector store failed: HTTP {response.status}')
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(vs_file_url, headers=headers, json=payload) as response:
+                        if response.status == 200:
+                            vs_file_info = await response.json()
+                            logger.info(f'Added file {file_id} to vector store {vector_store_id}')
+                            return file_id, vs_file_info.get('id')
+                        else:
+                            error_text = await response.text()
+                            logger.error(f'Failed to add file to vector store: HTTP {response.status}, {error_text}')
+                            raise Exception(f'Failed to add file to vector store: HTTP {response.status}')
                 
     except Exception as e:
         logger.error(f'Failed to upload file to vector store: {e}')
         raise
+    finally:
+        # Clean up temporary file and directory
+        if temp_file_path:
+            try:
+                import shutil
+                temp_dir = os.path.dirname(temp_file_path)
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+                    logger.debug(f'Cleaned up temporary directory: {temp_dir}')
+            except Exception as e:
+                logger.warning(f'Failed to clean up temporary directory: {e}')
 
 
 async def delete_file_from_vector_store(filename: str, vector_store_id: str, config: dict):
@@ -570,8 +517,9 @@ def main():
                     st.metric('Files in Knowledge Base', len(files))
                     
                     with st.expander('View Files', expanded=False):
+                        st.info('💡 Files are accessible by agents via File Search Tool. Download is not supported for assistant files.')
                         for file_info in files:
-                            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                            col1, col2, col3 = st.columns([4, 1, 1])
                             with col1:
                                 st.text(file_info['filename'])
                             with col2:
@@ -583,36 +531,6 @@ def main():
                                 elif status == 'failed':
                                     st.caption('❌ Failed')
                             with col3:
-                                # Download button - fetch content on demand
-                                file_id = file_info['id']
-                                download_key = f"file_content_{file_id}"
-                                
-                                # Check if content is already loaded
-                                if download_key not in st.session_state:
-                                    # Show button to load file
-                                    if st.button('📥', key=f"load_{file_id}", help='Prepare download'):
-                                        with st.spinner('Loading...'):
-                                            content, filename = asyncio.run(download_file_from_vector_store(
-                                                file_id,
-                                                config
-                                            ))
-                                            if content:
-                                                st.session_state[download_key] = content
-                                                st.session_state[f"filename_{file_id}"] = filename
-                                                st.rerun()
-                                            else:
-                                                st.error('Failed to load')
-                                else:
-                                    # Show download button
-                                    st.download_button(
-                                        label='💾',
-                                        data=st.session_state[download_key],
-                                        file_name=st.session_state[f"filename_{file_id}"],
-                                        key=f"download_{file_id}",
-                                        help='Download file',
-                                        on_click=lambda fid=file_id: st.session_state.pop(f"file_content_{fid}", None) or st.session_state.pop(f"filename_{fid}", None)
-                                    )
-                            with col4:
                                 if st.button('🗑️', key=f"delete_{file_info['id']}", help='Delete file'):
                                     try:
                                         deleted = asyncio.run(delete_file_from_vector_store(
@@ -740,46 +658,53 @@ def main():
                             "vector_store_ids": [vector_store_id]
                         }
                     }
+                    # Add file_search as a tool specification
+                    facts_tools.append({"type": "file_search"})
                 
                 # Update instructions based on vector store availability
-                facts_instructions = f"""for the user request: {prompt}"""
                 facts_additional = "Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
                 
                 if vector_store_id:
-                    facts_instructions += """
-
-                        CRITICAL: You have access to a KNOWLEDGE BASE with entity mappings and terminology definitions!
-                        
-                        MANDATORY FIRST STEP: Search your knowledge base for ANY terms, entity names, or business jargon mentioned in the user request.
-                        The knowledge base contains mappings like:
-                        - Synonyms to database entity types (e.g., slang terms → msdyn_workorder)
-                        - Business terminology → technical field names
-                        - Alternative names → canonical entity names
-                        
-                        Example: If user mentions "розовые слоны" (pink elephants), search your knowledge base for this term BEFORE querying the database.
-                        
-                        After checking the knowledge base, identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
-                        1. Try exact match first (WHERE name = 'value')
-                        2. If not found, try partial match (WHERE name LIKE '%value%')
-                        3. If still not found, try similar names
-                        
-                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
-                        
-                        You will justify what tools you are going to use before requesting them.
-                        """
-                    facts_additional = "ALWAYS start by searching your knowledge base for entity mappings and terminology definitions. Check the knowledge base for every unusual term or business jargon in the user request. " + facts_additional
+                    facts_instructions = f"""
+                    🚨 STOP! MANDATORY FIRST ACTION REQUIRED! 🚨
+                    
+                    Before doing ANYTHING else, you MUST search the knowledge base for these terms from the user request:
+                    {prompt}
+                    
+                    YOUR FIRST ACTION: Use file_search tool to search for ANY unusual terms like:
+                    - "розовые слоны" (pink elephants)
+                    - Any other slang, nicknames, or business jargon
+                    
+                    The knowledge base contains entity mappings that tell you which database tables correspond to slang terms.
+                    
+                    EXAMPLE:
+                    User asks: "Сколько розовых слонов было летом 2025?"
+                    
+                    Step 1: You search file_search for "розовые слоны"
+                    Step 2: Knowledge base returns: "розовые слоны = msdyn_workorder table"
+                    Step 3: You query msdyn_workorder table for summer 2025 data
+                    
+                    DO NOT SKIP STEP 1! Search the knowledge base first!
+                    
+                    After checking the knowledge base:
+                    - If you find a mapping → use that table immediately
+                    - If you find nothing → proceed with MCP Tools to search database
+                    
+                    Then identify exact entities and validate with SELECT TOP 1.
+                    """
+                    facts_additional = "🚨 FIRST ACTION: Search knowledge base with file_search tool! Query for unusual terms mentioned in request. " + facts_additional
                 else:
-                    facts_instructions += """
-
-                        Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
-                        1. Try exact match first (WHERE name = 'value')
-                        2. If not found, try partial match (WHERE name LIKE '%value%')
-                        3. If still not found, try similar names
-                        
-                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
-                        
-                        You will justify what tools you are going to use before requesting them.
-                        """
+                    facts_instructions = f"""for the user request: {prompt}
+                    
+                    Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
+                    1. Try exact match first (WHERE name = 'value')
+                    2. If not found, try partial match (WHERE name LIKE '%value%')
+                    3. If still not found, try similar names
+                    
+                    Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
+                    
+                    You will justify what tools you are going to use before requesting them.
+                    """
                 
                 facts_description = "Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities."
                 if vector_store_id:
@@ -840,6 +765,8 @@ def main():
                             "vector_store_ids": [vector_store_id]
                         }
                     }
+                    # Add file_search as a tool specification
+                    glossary_tools.append({"type": "file_search"})
                     glossary_additional += " You have access to a knowledge base with domain-specific terminology and definitions. Search your knowledge for relevant context when defining terms."
                 
                 glossary_agent = glossary_client.create_agent(
