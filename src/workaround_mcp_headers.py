@@ -4,36 +4,15 @@ Use this in your application until the library is updated.
 """
 
 from typing import Any
-from collections.abc import MutableMapping, Sequence
 from agent_framework.azure import AzureAIAgentClient
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableSequence
 
 from agent_framework import (
     ChatMessage,
     ChatOptions,
-    DataContent,
     FunctionApprovalResponseContent,
     FunctionResultContent,
     HostedMCPTool,
-    Role,
-    TextContent,
-    ToolMode,
-    UriContent,
-)
-
-from azure.ai.agents.models import (
-    AgentsNamedToolChoice,
-    AgentsNamedToolChoiceType,
-    AgentsToolChoiceOptionMode,
-    FunctionName,
-    MessageImageUrlParam,
-    MessageInputContentBlock,
-    MessageInputImageUrlBlock,
-    MessageInputTextBlock,
-    MessageRole,
-    ResponseFormatJsonSchema,
-    ResponseFormatJsonSchemaType,
-    ThreadMessageOptions,
 )
 
 import logging
@@ -112,4 +91,3 @@ def patch_azure_ai_client():
     _patch_applied = True
     
     logger.info("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
-    print("✓ Applied HostedMCPTool headers workaround to AzureAIAgentClient")
