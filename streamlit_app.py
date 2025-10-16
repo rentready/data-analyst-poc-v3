@@ -58,7 +58,7 @@ from src.workaround_mcp_headers import patch_azure_ai_client
 from src.workaround_magentic import patch_magentic_orchestrator
 import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
-from src.event_renderer import EventRenderer
+from src.event_renderer import EventRenderer, SpinnerManager
 
 # Применяем патчи ДО создания клиента
 patch_azure_ai_client()
@@ -103,17 +103,6 @@ def get_time() -> str:
 st.session_state.current_chat = st.empty()
 st.session_state.current_role = st.empty()
 
-def start_spinner(text):
-    ctx = st.spinner(text)
-    ctx.__enter__()
-    return ctx
-
-def stop_spinner(ctx):
-    if ctx is not None:
-        ctx.__exit__(None, None, None)
-
-st.session_state.spinner_ctx = None
-
 async def on_runstep_event(agent_id: str, event) -> None:
     """
     Handle RunStep, ThreadRun and MessageDeltaChunk from Azure AI agents.
@@ -141,13 +130,12 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     pass;
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
-                    st.session_state.spinner_ctx = start_spinner("Thinking about next steps...")
+                    SpinnerManager.start("Thinking about next steps...")
                 else:
                     st.session_state.current_chat = st.chat_message("🤖")
                     st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
                     with st.session_state.current_chat:
-                        EventRenderer.render(event)
-                        st.session_state.spinner_ctx = start_spinner("Thinking...")
+                        EventRenderer.render(event, auto_start_spinner="Thinking...")
             return
 
         if isinstance(event, ThreadMessage):
@@ -176,7 +164,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     if agent_id not in _message_containers:
                         _message_containers[agent_id] = st.session_state.current_chat.empty()
                         _message_accumulated_text[agent_id] = ""
-                        stop_spinner(st.session_state.spinner_ctx)
+                        SpinnerManager.stop()
                 
                 # COMPLETED - убираем контейнер, выводим через рендерер
                 elif run_step.status == RunStepStatus.COMPLETED:
@@ -221,19 +209,17 @@ async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
     if isinstance(event, MagenticOrchestratorMessageEvent):
         
         if event.kind == "user_task":
-            st.session_state.spinner_ctx = start_spinner("Thinking...")
+            SpinnerManager.start("Thinking...")
             return;
         # Рендерим через EventRenderer
         with st.chat_message("assistant"):
-            EventRenderer.render(event)
+            EventRenderer.render(event, auto_start_spinner="Handing the task to the assistants...")
             st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
-            st.session_state.spinner_ctx = start_spinner("Handing the task to the assistants...")
     
     elif isinstance(event, MagenticFinalResultEvent):
 
         if event.message is not None:
             with st.chat_message("assistant"):
-                stop_spinner(st.session_state.spinner_ctx)
                 EventRenderer.render(event)
                 st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
 
@@ -295,7 +281,7 @@ def main():
     )
 
     async def run_workflow(prompt: str):
-        st.session_state.spinner_ctx = start_spinner("Planning the task...")
+        SpinnerManager.start("Planning the task...")
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -421,8 +407,7 @@ def main():
 
                 await workflow.run(prompt)
 
-                stop_spinner(st.session_state.spinner_ctx)
-                st.session_state.spinner_ctx = None
+                SpinnerManager.stop()
 
                     
 

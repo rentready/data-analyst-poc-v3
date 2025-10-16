@@ -47,12 +47,45 @@ def parse_tool_output(output: Optional[str]) -> tuple[bool, any]:
         return False, output
 
 
+class SpinnerManager:
+    """Manages spinner state for the application."""
+    
+    @staticmethod
+    def start(text: str):
+        """Start a spinner with the given text."""
+        ctx = st.spinner(text)
+        ctx.__enter__()
+        if 'spinner_ctx' not in st.session_state:
+            st.session_state.spinner_ctx = None
+        st.session_state.spinner_ctx = ctx
+        return ctx
+    
+    @staticmethod
+    def stop():
+        """Stop the current spinner if one exists."""
+        if 'spinner_ctx' in st.session_state and st.session_state.spinner_ctx is not None:
+            try:
+                st.session_state.spinner_ctx.__exit__(None, None, None)
+            except:
+                pass
+            st.session_state.spinner_ctx = None
+
+
 class EventRenderer:
     """Renders run events to Streamlit UI."""
     
     @staticmethod
-    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
-        """Render event to UI."""
+    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun'], auto_start_spinner: str = None):
+        """
+        Render event to UI.
+        
+        Args:
+            event: Event to render
+            auto_start_spinner: If provided, start spinner with this text after rendering
+        """
+        # Автоматически останавливаем спиннер перед рендерингом
+        SpinnerManager.stop()
+        
         # Magentic events
         if isinstance(event, MagenticOrchestratorMessageEvent):
             logger.info(f"**[Orchestrator - {event.message}]**")
@@ -85,6 +118,10 @@ class EventRenderer:
             st.write(event)
         else:
             logger.warning(f"Unknown event type: {type(event)}")
+        
+        # Автоматически запускаем спиннер после рендеринга, если указан
+        if auto_start_spinner:
+            SpinnerManager.start(auto_start_spinner)
     
     @staticmethod
     def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):
