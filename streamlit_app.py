@@ -198,41 +198,29 @@ async def on_runstep_event(agent_id: str, event) -> None:
     except Exception as e:
         logger.error(f"Error processing RunStep: {e}", exc_info=True)
 
-def create_event_handler(agent_containers: dict, agent_accumulated_text: dict):
+
+async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
     """
-    Create event handler for workflow events with agent-specific state tracking.
-    
-    Args:
-        agent_containers: Dictionary to store Streamlit containers for each agent
-        agent_accumulated_text: Dictionary to accumulate streaming text for each agent
-    
-    Returns:
-        Async function that handles MagenticCallbackEvent instances
+    The `on_event` callback processes events emitted by the workflow.
+    Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
     """
-    async def on_event(event: MagenticCallbackEvent) -> None:
-        """
-        The `on_event` callback processes events emitted by the workflow.
-        Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
-        """
+    
+    if isinstance(event, MagenticOrchestratorMessageEvent):
         
-        if isinstance(event, MagenticOrchestratorMessageEvent):
-            
-            if event.kind == "user_task":
-                pass;
-                return;
-            # Рендерим через EventRenderer
+        if event.kind == "user_task":
+            pass;
+            return;
+        # Рендерим через EventRenderer
+        with st.chat_message("assistant"):
+            EventRenderer.render(event)
+            st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+    
+    elif isinstance(event, MagenticFinalResultEvent):
+
+        if event.message is not None:
             with st.chat_message("assistant"):
                 EventRenderer.render(event)
                 st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
-        
-        elif isinstance(event, MagenticFinalResultEvent):
-
-            if event.message is not None:
-                with st.chat_message("assistant"):
-                    EventRenderer.render(event)
-                    st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
-    
-    return on_event
 
 def initialize_app() -> None:
     """
@@ -396,13 +384,6 @@ def main():
                 st.session_state.data_extractor_thread = data_extractor_thread
                 st.session_state.glossary_thread = glossary_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
-
-                # Словари для хранения контейнеров и накопленного текста для каждого агента
-                agent_containers = {}
-                agent_accumulated_text = {}
-                
-                # Создаем обработчик событий
-                on_event = create_event_handler(agent_containers, agent_accumulated_text)
                 
                 # Устанавливаем глобальные callbacks для workaround модуля
                 agent_executor_workaround.global_runstep_callback = on_runstep_event
@@ -415,7 +396,7 @@ def main():
                         data_extractor = data_extractor_agent,
                         glossary = glossary_agent,
                     )
-                    .on_event(on_event, mode=MagenticCallbackMode.STREAMING)
+                    .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
                         chat_client=orchestrator_client,
                         instructions=ORCHESTRATOR_INSTRUCTIONS,
