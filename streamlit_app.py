@@ -5,7 +5,7 @@ import streamlit as st
 import logging
 import os
 import asyncio
-from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config
+from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config, get_vector_store_id
 from src.constants import PROJ_ENDPOINT_KEY, AGENT_ID_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth
@@ -59,6 +59,7 @@ from src.workaround_magentic import patch_magentic_orchestrator
 import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
 from src.event_renderer import EventRenderer
+# Simplified: Direct AI Project + Vector Store integration
 
 # Применяем патчи ДО создания клиента
 patch_azure_ai_client()
@@ -249,6 +250,292 @@ def initialize_app() -> None:
         st.error("❌ Please sign in to use the chatbot.")
         st.stop()
 
+async def get_vector_store_files(vector_store_id: str, config: dict):
+    """
+    Get list of files in Vector Store using REST API.
+    Reference: https://learn.microsoft.com/en-us/rest/api/aifoundry/aiagents/vector-store-files/list-vector-store-files
+    
+    Args:
+        vector_store_id: ID of the Vector Store
+        config: Configuration dictionary with project endpoint
+        
+    Returns:
+        List of file dicts with id, filename, status
+    """
+    try:
+        async with DefaultAzureCredential() as credential:
+            # Get token for authentication
+            token = await credential.get_token("https://ai.azure.com/.default")
+            
+            # Build REST API URL
+            endpoint = config[PROJ_ENDPOINT_KEY]
+            url = f"{endpoint}/vector_stores/{vector_store_id}/files?api-version=v1"
+            
+            # Make HTTP request
+            import aiohttp
+            headers = {
+                'Authorization': f'Bearer {token.token}',
+                'Content-Type': 'application/json'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        files = []
+                        
+                        # Process each file from response
+                        for file_data in data.get('data', []):
+                            # Get full file details to get filename
+                            file_id = file_data.get('id')
+                            file_url = f"{endpoint}/files/{file_id}?api-version=v1"
+                            
+                            async with session.get(file_url, headers=headers) as file_response:
+                                if file_response.status == 200:
+                                    file_details = await file_response.json()
+                                    
+                                    # Debug: Log full response to see what API returns
+                                    logger.info(f'GET /files/{file_id} response: {file_details}')
+                                    
+                                    filename = file_details.get('filename', '')
+                                    logger.info(f'Extracted filename for {file_id}: "{filename}"')
+                                    
+                                    if not filename:
+                                        filename = f'File {file_id[:8]}...'
+                                        logger.warning(f'Filename is empty, using fallback: {filename}')
+                                    
+                                    files.append({
+                                        'id': file_id,
+                                        'filename': filename,
+                                        'status': file_data.get('status', 'unknown')
+                                    })
+                                else:
+                                    # Fallback if can't get filename
+                                    logger.warning(f'GET /files/{file_id} failed with status {file_response.status}')
+                                    files.append({
+                                        'id': file_id,
+                                        'filename': f'File {file_id[:8]}...',
+                                        'status': file_data.get('status', 'unknown')
+                                    })
+                        
+                        return files
+                    else:
+                        logger.error(f'Failed to list files: HTTP {response.status}')
+                        return []
+                
+    except Exception as e:
+        logger.error(f'Failed to list vector store files: {e}')
+        return []
+
+
+async def download_file_from_vector_store(file_id: str, config: dict):
+    """
+    Download file content from Vector Store using REST API.
+    
+    Args:
+        file_id: ID of the file to download
+        config: Configuration dictionary with project endpoint
+        
+    Returns:
+        Tuple of (file_content_bytes, filename) or (None, None) on error
+    """
+    try:
+        async with DefaultAzureCredential() as credential:
+            # Get token for authentication
+            token = await credential.get_token("https://ai.azure.com/.default")
+            
+            # Build REST API URL
+            endpoint = config[PROJ_ENDPOINT_KEY]
+            
+            # First get file details to get filename
+            file_url = f"{endpoint}/files/{file_id}?api-version=v1"
+            
+            import aiohttp
+            headers = {
+                'Authorization': f'Bearer {token.token}',
+                'Content-Type': 'application/json'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                # Get file metadata
+                async with session.get(file_url, headers=headers) as response:
+                    if response.status == 200:
+                        file_details = await response.json()
+                        filename = file_details.get('filename', 'unknown_file')
+                    else:
+                        logger.error(f'Failed to get file details: HTTP {response.status}')
+                        return None, None
+                
+                # Download file content
+                content_url = f"{endpoint}/files/{file_id}/content?api-version=v1"
+                async with session.get(content_url, headers=headers) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        return content, filename
+                    else:
+                        logger.error(f'Failed to download file: HTTP {response.status}')
+                        return None, None
+                
+    except Exception as e:
+        logger.error(f'Failed to download file: {e}')
+        return None, None
+
+
+async def upload_file_to_vector_store(file_data: bytes, filename: str, vector_store_id: str, config: dict):
+    """
+    Upload file to AI Project and add to Vector Store using REST API.
+    Reference: https://learn.microsoft.com/en-us/rest/api/aifoundry/
+    
+    Args:
+        file_data: File content as bytes
+        filename: Name of the file
+        vector_store_id: ID of the Vector Store
+        config: Configuration dictionary with project endpoint
+    """
+    try:
+        async with DefaultAzureCredential() as credential:
+            # Get token for authentication
+            token = await credential.get_token("https://ai.azure.com/.default")
+            
+            # Build REST API URL
+            endpoint = config[PROJ_ENDPOINT_KEY]
+            
+            import aiohttp
+            from aiohttp import FormData
+            headers = {
+                'Authorization': f'Bearer {token.token}'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                # Step 1: Upload file to AI Project
+                upload_url = f"{endpoint}/files?api-version=v1"
+                
+                # Create multipart form data with proper filename
+                form = FormData()
+                form.add_field(
+                    name='file',
+                    value=file_data,
+                    filename=filename,
+                    content_type='application/octet-stream'
+                )
+                form.add_field('purpose', 'assistants')
+                
+                async with session.post(upload_url, headers=headers, data=form) as response:
+                    if response.status == 200:
+                        file_info = await response.json()
+                        file_id = file_info.get('id')
+                        uploaded_filename = file_info.get('filename', 'NO_FILENAME')
+                        logger.info(f'Uploaded file to AI Project: {file_id}, filename in response: {uploaded_filename}')
+                    else:
+                        error_text = await response.text()
+                        logger.error(f'Failed to upload file: HTTP {response.status}, {error_text}')
+                        raise Exception(f'File upload failed: HTTP {response.status}')
+                
+                # Step 2: Add file to Vector Store
+                vs_file_url = f"{endpoint}/vector_stores/{vector_store_id}/files?api-version=v1"
+                
+                # Add JSON content type for this request
+                vs_headers = {
+                    'Authorization': f'Bearer {token.token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                payload = {'file_id': file_id}
+                
+                async with session.post(vs_file_url, headers=vs_headers, json=payload) as response:
+                    if response.status == 200:
+                        vs_file_info = await response.json()
+                        logger.info(f'Added file {file_id} to vector store {vector_store_id}')
+                        return file_id, vs_file_info.get('id')
+                    else:
+                        error_text = await response.text()
+                        logger.error(f'Failed to add file to vector store: HTTP {response.status}, {error_text}')
+                        raise Exception(f'Add to vector store failed: HTTP {response.status}')
+                
+    except Exception as e:
+        logger.error(f'Failed to upload file to vector store: {e}')
+        raise
+
+
+async def delete_file_from_vector_store(filename: str, vector_store_id: str, config: dict):
+    """
+    Delete file from Vector Store by filename.
+    
+    Args:
+        filename: Name of the file to delete
+        vector_store_id: ID of the Vector Store
+        config: Configuration dictionary with project endpoint
+    """
+    try:
+        async with DefaultAzureCredential() as credential:
+            # Get token for authentication
+            token = await credential.get_token("https://ai.azure.com/.default")
+            
+            # Build REST API URL
+            endpoint = config[PROJ_ENDPOINT_KEY]
+            
+            import aiohttp
+            headers = {
+                'Authorization': f'Bearer {token.token}',
+                'Content-Type': 'application/json'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                # Step 1: List all files in vector store
+                list_url = f"{endpoint}/vector_stores/{vector_store_id}/files?api-version=v1"
+                
+                async with session.get(list_url, headers=headers) as response:
+                    if response.status != 200:
+                        logger.error(f'Failed to list files: HTTP {response.status}')
+                        return False
+                    
+                    data = await response.json()
+                    files = data.get('data', [])
+                
+                # Step 2: Find file by name
+                file_id_to_delete = None
+                for file_data in files:
+                    file_id = file_data.get('id')
+                    file_url = f"{endpoint}/files/{file_id}?api-version=v1"
+                    
+                    async with session.get(file_url, headers=headers) as response:
+                        if response.status == 200:
+                            file_details = await response.json()
+                            if file_details.get('filename') == filename:
+                                file_id_to_delete = file_id
+                                break
+                
+                if not file_id_to_delete:
+                    logger.warning(f'File {filename} not found in vector store')
+                    return False
+                
+                # Step 3: Delete from vector store
+                delete_vs_url = f"{endpoint}/vector_stores/{vector_store_id}/files/{file_id_to_delete}?api-version=v1"
+                
+                async with session.delete(delete_vs_url, headers=headers) as response:
+                    if response.status in [200, 204]:
+                        logger.info(f'Deleted file {file_id_to_delete} ({filename}) from vector store')
+                    else:
+                        logger.error(f'Failed to delete from vector store: HTTP {response.status}')
+                        return False
+                
+                # Step 4: Delete file from AI Project
+                delete_file_url = f"{endpoint}/files/{file_id_to_delete}?api-version=v1"
+                
+                async with session.delete(delete_file_url, headers=headers) as response:
+                    if response.status in [200, 204]:
+                        logger.info(f'Deleted file {file_id_to_delete} from AI Project')
+                        return True
+                    else:
+                        logger.warning(f'Failed to delete file from AI Project: HTTP {response.status}')
+                        # Still return True as it was removed from vector store
+                        return True
+                
+    except Exception as e:
+        logger.error(f'Failed to delete file from vector store: {e}')
+        return False
+
+
 def main():
 
     initialize_app()
@@ -267,6 +554,137 @@ def main():
 
     mcp_config = get_mcp_config()
     mcp_token = get_mcp_token_sync(mcp_config)
+    
+    # Knowledge Base Management in Sidebar
+    with st.sidebar:
+        st.header('📚 Knowledge Base')
+        
+        vector_store_id = get_vector_store_id()
+        if vector_store_id:
+            # Display files from Vector Store using REST API
+            try:
+                import asyncio
+                files = asyncio.run(get_vector_store_files(vector_store_id, config))
+                
+                if files:
+                    st.metric('Files in Knowledge Base', len(files))
+                    
+                    with st.expander('View Files', expanded=False):
+                        for file_info in files:
+                            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                            with col1:
+                                st.text(file_info['filename'])
+                            with col2:
+                                status = file_info.get('status', 'unknown')
+                                if status == 'completed':
+                                    st.caption('✅ Ready')
+                                elif status == 'in_progress':
+                                    st.caption('⏳ Processing')
+                                elif status == 'failed':
+                                    st.caption('❌ Failed')
+                            with col3:
+                                # Download button - fetch content on demand
+                                file_id = file_info['id']
+                                download_key = f"file_content_{file_id}"
+                                
+                                # Check if content is already loaded
+                                if download_key not in st.session_state:
+                                    # Show button to load file
+                                    if st.button('📥', key=f"load_{file_id}", help='Prepare download'):
+                                        with st.spinner('Loading...'):
+                                            content, filename = asyncio.run(download_file_from_vector_store(
+                                                file_id,
+                                                config
+                                            ))
+                                            if content:
+                                                st.session_state[download_key] = content
+                                                st.session_state[f"filename_{file_id}"] = filename
+                                                st.rerun()
+                                            else:
+                                                st.error('Failed to load')
+                                else:
+                                    # Show download button
+                                    st.download_button(
+                                        label='💾',
+                                        data=st.session_state[download_key],
+                                        file_name=st.session_state[f"filename_{file_id}"],
+                                        key=f"download_{file_id}",
+                                        help='Download file',
+                                        on_click=lambda fid=file_id: st.session_state.pop(f"file_content_{fid}", None) or st.session_state.pop(f"filename_{fid}", None)
+                                    )
+                            with col4:
+                                if st.button('🗑️', key=f"delete_{file_info['id']}", help='Delete file'):
+                                    try:
+                                        deleted = asyncio.run(delete_file_from_vector_store(
+                                            file_info['filename'],
+                                            vector_store_id,
+                                            config
+                                        ))
+                                        if deleted:
+                                            st.success(f"✅ Deleted {file_info['filename']}")
+                                        else:
+                                            st.warning(f"⚠️ Could not delete {file_info['filename']}")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f'❌ Error: {e}')
+                else:
+                    st.info('No files in Knowledge Base yet')
+            except Exception as e:
+                st.warning(f'Could not load files: {e}')
+            
+            st.divider()
+            
+            # File uploader
+            uploaded_files = st.file_uploader(
+                'Upload documents',
+                accept_multiple_files=True,
+                type=['pdf', 'txt', 'docx', 'md', 'json', 'csv'],
+                help='Upload documents that agents can search through'
+            )
+            
+            if uploaded_files and st.button('📤 Upload', type='primary'):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                upload_errors = []
+                upload_success = []
+                
+                for idx, uploaded_file in enumerate(uploaded_files):
+                    file_data = uploaded_file.getvalue()
+                    status_text.text(f'Uploading {uploaded_file.name}...')
+                    
+                    try:
+                        import asyncio
+                        asyncio.run(upload_file_to_vector_store(
+                            file_data,
+                            uploaded_file.name,
+                            vector_store_id,
+                            config
+                        ))
+                        upload_success.append(uploaded_file.name)
+                    except Exception as e:
+                        upload_errors.append(f'{uploaded_file.name}: {e}')
+                    
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                
+                status_text.empty()
+                progress_bar.empty()
+                
+                if upload_success:
+                    st.success(f'✅ Uploaded {len(upload_success)} file(s)!')
+                
+                if upload_errors:
+                    st.error('⚠️ Upload errors:')
+                    for error in upload_errors:
+                        st.error(f'  • {error}')
+                
+                st.rerun()
+            
+            st.caption(f'📋 Vector Store: `{vector_store_id[:20]}...`')
+        else:
+            st.info('💡 Configure `vector_store_id` in secrets.toml')
+        
+        st.divider()
 
     # With approval mode and allowed tools
     mcp_tool_with_approval = HostedMCPTool(
@@ -288,6 +706,11 @@ def main():
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
+            # Vector Store for File Search (if configured)
+            vector_store_id = get_vector_store_id()
+            if vector_store_id:
+                logger.info(f'File Search Tool enabled with vector store: {vector_store_id}')
+            
             # Создаем отдельные threads для каждого агента
             facts_identifier_thread = await project_client.agents.threads.create() if st.session_state.get("facts_identifier_thread", None) is None else st.session_state.facts_identifier_thread
             sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
@@ -306,11 +729,47 @@ def main():
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=glossary_thread.id) as glossary_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=orchestrator_thread.id) as orchestrator_client,
             ):
-                facts_identifier_agent = facts_identifier_client.create_agent(
-                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="Facts Identifier",
-                    description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
-                    instructions=f"""for the user request: {prompt}
+                # Prepare tools for facts identifier
+                facts_tools = [mcp_tool_with_approval, get_time]
+                
+                # Add tool_resources if vector store is configured
+                facts_tool_resources = None
+                if vector_store_id:
+                    facts_tool_resources = {
+                        "file_search": {
+                            "vector_store_ids": [vector_store_id]
+                        }
+                    }
+                
+                # Update instructions based on vector store availability
+                facts_instructions = f"""for the user request: {prompt}"""
+                facts_additional = "Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
+                
+                if vector_store_id:
+                    facts_instructions += """
+
+                        CRITICAL: You have access to a KNOWLEDGE BASE with entity mappings and terminology definitions!
+                        
+                        MANDATORY FIRST STEP: Search your knowledge base for ANY terms, entity names, or business jargon mentioned in the user request.
+                        The knowledge base contains mappings like:
+                        - Synonyms to database entity types (e.g., slang terms → msdyn_workorder)
+                        - Business terminology → technical field names
+                        - Alternative names → canonical entity names
+                        
+                        Example: If user mentions "розовые слоны" (pink elephants), search your knowledge base for this term BEFORE querying the database.
+                        
+                        After checking the knowledge base, identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
+                        1. Try exact match first (WHERE name = 'value')
+                        2. If not found, try partial match (WHERE name LIKE '%value%')
+                        3. If still not found, try similar names
+                        
+                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
+                        
+                        You will justify what tools you are going to use before requesting them.
+                        """
+                    facts_additional = "ALWAYS start by searching your knowledge base for entity mappings and terminology definitions. Check the knowledge base for every unusual term or business jargon in the user request. " + facts_additional
+                else:
+                    facts_instructions += """
 
                         Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
                         1. Try exact match first (WHERE name = 'value')
@@ -320,15 +779,22 @@ def main():
                         Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
                         
                         You will justify what tools you are going to use before requesting them.
-                        """,
-
-                    tools=[
-                        mcp_tool_with_approval,
-                        get_time
-                    ],
+                        """
+                
+                facts_description = "Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities."
+                if vector_store_id:
+                    facts_description += " You have access to a knowledge base - use it to find entity mappings and terminology before querying the database."
+                
+                facts_identifier_agent = facts_identifier_client.create_agent(
+                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
+                    name="Facts Identifier",
+                    description=facts_description,
+                    instructions=facts_instructions,
+                    tools=facts_tools,
+                    tool_resources=facts_tool_resources,
                     conversation_id=sql_builder_thread.id,
                     temperature=0.1,
-                    additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
+                    additional_instructions=facts_additional
                 )
 
                 sql_builder_agent = sql_builder_client.create_agent(
@@ -362,14 +828,30 @@ def main():
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
 
+                # Prepare tools for glossary
+                glossary_tools = [get_time]
+                
+                # Add tool_resources if vector store is configured
+                glossary_tool_resources = None
+                glossary_additional = GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS
+                if vector_store_id:
+                    glossary_tool_resources = {
+                        "file_search": {
+                            "vector_store_ids": [vector_store_id]
+                        }
+                    }
+                    glossary_additional += " You have access to a knowledge base with domain-specific terminology and definitions. Search your knowledge for relevant context when defining terms."
+                
                 glossary_agent = glossary_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
                     instructions=st.secrets["glossary"]["instructions"],
+                    tools=glossary_tools,
+                    tool_resources=glossary_tool_resources,
                     conversation_id=glossary_thread.id,
                     temperature=0.1,
-                    additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
+                    additional_instructions=glossary_additional,
                 )
 
                 st.session_state.facts_identifier_thread = facts_identifier_thread
