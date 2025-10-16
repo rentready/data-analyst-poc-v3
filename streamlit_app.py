@@ -130,6 +130,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     pass;
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
+                    logger.info(f"ThreadRun COMPLETED: {event}")
                 else:
                     st.session_state.current_chat = st.chat_message("🤖")
                     st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
@@ -152,36 +153,35 @@ async def on_runstep_event(agent_id: str, event) -> None:
                 # Обновляем контейнер
                 _message_containers[agent_id].markdown(_message_accumulated_text[agent_id])
             return
-        
-        # Обработка RunStep
-        run_step = event
-
-        # Обработка MESSAGE_CREATION
-        if run_step.type == RunStepType.MESSAGE_CREATION:
-            # IN_PROGRESS - создаем контейнер для streaming
-            if run_step.status == RunStepStatus.IN_PROGRESS:
-                if agent_id not in _message_containers:
-                    _message_containers[agent_id] = st.session_state.current_chat.empty()
-                    _message_accumulated_text[agent_id] = ""
-            
-            # COMPLETED - убираем контейнер, выводим через рендерер
-            elif run_step.status == RunStepStatus.COMPLETED:
-                if agent_id in _message_containers:
-                    final_text = _message_accumulated_text.get(agent_id, "")
-                    # Убираем streaming контейнер
-                    _message_containers[agent_id].empty()
-                    del _message_containers[agent_id]
-                    del _message_accumulated_text[agent_id]
-                    if final_text != "":
-                        with st.session_state.current_chat:
-                        # Рендерим через EventRenderer (свернутое по умолчанию)
-                            EventRenderer.render(final_text)
-                        
-                        # Save only text content for session persistence
-                        st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
-            return
 
         if isinstance(event, RunStep):
+            run_step = event
+
+            # Обработка MESSAGE_CREATION
+            if run_step.type == RunStepType.MESSAGE_CREATION:
+                # IN_PROGRESS - создаем контейнер для streaming
+                if run_step.status == RunStepStatus.IN_PROGRESS:
+                    if agent_id not in _message_containers:
+                        _message_containers[agent_id] = st.session_state.current_chat.empty()
+                        _message_accumulated_text[agent_id] = ""
+                
+                # COMPLETED - убираем контейнер, выводим через рендерер
+                elif run_step.status == RunStepStatus.COMPLETED:
+                    if agent_id in _message_containers:
+                        final_text = _message_accumulated_text.get(agent_id, "")
+                        # Убираем streaming контейнер
+                        _message_containers[agent_id].empty()
+                        del _message_containers[agent_id]
+                        del _message_accumulated_text[agent_id]
+                        if final_text != "":
+                            with st.session_state.current_chat:
+                            # Рендерим через EventRenderer (свернутое по умолчанию)
+                                EventRenderer.render(final_text)
+                            
+                            # Save only text content for session persistence
+                            st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
+                return
+
             # Обработка TOOL_CALLS - делегируем в EventRenderer
             if (event.type == RunStepType.TOOL_CALLS and 
                 hasattr(event, 'step_details') and 
