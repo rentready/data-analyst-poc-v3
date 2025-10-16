@@ -83,7 +83,7 @@ class EventRenderer:
             event: Event to render
             auto_start_spinner: If provided, start spinner with this text after rendering
         """
-        # Автоматически останавливаем спиннер перед рендерингом
+        # Automatically stop spinner before rendering
         SpinnerManager.stop()
         
         # Magentic events
@@ -119,7 +119,7 @@ class EventRenderer:
         else:
             logger.warning(f"Unknown event type: {type(event)}")
         
-        # Автоматически запускаем спиннер после рендеринга, если указан
+        # Automatically start spinner after rendering if specified
         if auto_start_spinner:
             SpinnerManager.start(auto_start_spinner)
     
@@ -128,18 +128,18 @@ class EventRenderer:
         """Render orchestrator message."""
         message_text = getattr(event.message, 'text', '')
         
-        # Для инструкций - явно показываем, что это команда агентам
+        # For instructions - explicitly show this is a command to agents
         if event.kind == "instruction":
             st.info(f"🎯 Assistants, please help with the following request:", icon=":material/question_mark:")
             st.write(message_text)
         
-        # Для task_ledger - сворачиваем внутренний контекст
+        # For task_ledger - collapse internal context
         elif event.kind == "task_ledger":
             st.info(f"📋 **Context**")
             st.markdown(message_text)
         
         else:
-            # Другие типы (plan, facts, progress, etc.)
+            # Other types (plan, facts, progress, etc.)
             st.write(f"**[Orchestrator - {event.kind}]**")
             st.write(message_text)
             st.write("---")
@@ -159,10 +159,10 @@ class EventRenderer:
     @staticmethod
     def render_agent_final_message(agent_id: str, message_text: str):
         """Render agent's final message in collapsible format (auxiliary message)."""
-        # Определяем превью (первые 100 символов)
+        # Define preview (first 100 characters)
         preview = message_text[:100] + "..." if len(message_text) > 100 else message_text
         
-        # Сворачивающийся блок с превью
+        # Collapsible block with preview
         with st.expander(f"{preview}", expanded=False):
             st.markdown(message_text)
     
@@ -181,11 +181,11 @@ class EventRenderer:
     @staticmethod
     def render_thread_run(run: ThreadRun):
         """Render ThreadRun event - agent taking on work."""
-        # Получаем информацию о статусе
+        # Get status information
         status = run.status if hasattr(run, 'status') else None
         agent_id = run.agent_id if hasattr(run, 'agent_id') else "Unknown Agent"
         
-        # Рендерим в зависимости от статуса
+        # Render based on status
         if status == RunStatus.IN_PROGRESS or status == "in_progress":
             st.success(f"**{agent_id}** has started working on the task")
         elif status == RunStatus.QUEUED or status == "queued":
