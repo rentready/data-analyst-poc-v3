@@ -166,15 +166,21 @@ async def on_runstep_event(agent_id: str, event) -> None:
                 return
 
             # Handle TOOL_CALLS - delegate to EventRenderer
-            if (event.type == RunStepType.TOOL_CALLS and 
-                hasattr(event, 'step_details') and 
-                hasattr(event.step_details, 'tool_calls') and 
-                event.step_details.tool_calls):
+            if (event.type == RunStepType.TOOL_CALLS):
+            
+                if (hasattr(event, 'step_details') and 
+                    hasattr(event.step_details, 'tool_calls') and 
+                    event.step_details.tool_calls):
 
-                with st.session_state.current_chat:
-                    EventRenderer.render(event)
-                st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-            return;
+                    with st.session_state.current_chat:
+                        EventRenderer.render(event)
+                    st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
+                    SpinnerManager.stop()
+                else:
+                    with st.session_state.current_chat:
+                        SpinnerManager.start("Invoking a tool...")
+
+            return
         
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")
