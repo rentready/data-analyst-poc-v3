@@ -36,20 +36,20 @@ from agent_framework import (
     MagenticBuilder
 )
 
-from src.workaround_mcp_headers import patch_azure_ai_client
-from src.workaround_magentic import patch_magentic_orchestrator
 import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
 from src.event_renderer import EventRenderer, SpinnerManager
 
 # Apply patches BEFORE creating client
-patch_azure_ai_client()
-patch_magentic_orchestrator()
+
 patch_magentic_for_event_interception()
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
+# Log agent_framework version on startup
+import agent_framework
+logger.info(f"🔧 agent_framework version: {agent_framework.__version__ if hasattr(agent_framework, '__version__') else 'unknown'}")
 
 # Containers for streaming agent messages
 _message_containers = {}
