@@ -3,5 +3,5 @@ azure-ai-projects>=1.1.0b4
 azure-identity
 streamlit_msal
 aiohttp
-agent_framework>=1.0.0b251001
+agent_framework>=1.0.0b251016
 asyncio
