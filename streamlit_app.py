@@ -3,35 +3,22 @@
 from tracemalloc import stop
 import streamlit as st
 import logging
-import os
 import asyncio
 from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config, get_vector_store_id
-from src.constants import PROJ_ENDPOINT_KEY, AGENT_ID_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
+from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth
-from agent_framework import HostedMCPTool, ChatMessage, AgentRunResponseUpdate
-from agent_framework import WorkflowBuilder, MagenticBuilder, WorkflowOutputEvent, RequestInfoEvent, WorkflowFailedEvent, RequestInfoExecutor, WorkflowStatusEvent, WorkflowRunState
+from agent_framework import HostedMCPTool, MagenticBuilder
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
 from azure.identity.aio import DefaultAzureCredential
 from agent_framework.azure import AzureAIAgentClient
 from datetime import datetime, timezone
 from azure.ai.projects.aio import AIProjectClient
-from src.magnetic_prompts import (
-    ORCHESTRATOR_TASK_LEDGER_FACTS_PROMPT,
-    ORCHESTRATOR_TASK_LEDGER_PLAN_PROMPT,
-    ORCHESTRATOR_TASK_LEDGER_FULL_PROMPT,
-    ORCHESTRATOR_TASK_LEDGER_FACTS_UPDATE_PROMPT,
-    ORCHESTRATOR_TASK_LEDGER_PLAN_UPDATE_PROMPT,
-    ORCHESTRATOR_PROGRESS_LEDGER_PROMPT,
-    ORCHESTRATOR_FINAL_ANSWER_PROMPT
-)
+
 from src.agent_instructions import (
     SQL_BUILDER_INSTRUCTIONS,
     SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
     SQL_BUILDER_DESCRIPTION,
-    SQL_VALIDATOR_INSTRUCTIONS,
-    SQL_VALIDATOR_ADDITIONAL_INSTRUCTIONS,
-    SQL_VALIDATOR_DESCRIPTION,
     DATA_EXTRACTOR_INSTRUCTIONS,
     DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
     DATA_EXTRACTOR_DESCRIPTION,
@@ -40,28 +27,22 @@ from src.agent_instructions import (
     ORCHESTRATOR_INSTRUCTIONS
 )
 from agent_framework import (
-    ChatAgent,
-    HostedCodeInterpreterTool,
-    MagenticAgentDeltaEvent,
-    MagenticAgentMessageEvent,
     MagenticBuilder,
     MagenticCallbackEvent,
     MagenticCallbackMode,
     MagenticFinalResultEvent,
     MagenticOrchestratorMessageEvent,
-    ExecutorInvokedEvent,
-    MCPStreamableHTTPTool,
-    WorkflowOutputEvent,
+    HostedMCPTool, 
+    MagenticBuilder
 )
 
 from src.workaround_mcp_headers import patch_azure_ai_client
 from src.workaround_magentic import patch_magentic_orchestrator
 import src.workaround_agent_executor as agent_executor_workaround
 from src.workaround_agent_executor import patch_magentic_for_event_interception
-from src.event_renderer import EventRenderer
-# Simplified: Direct AI Project + Vector Store integration
+from src.event_renderer import EventRenderer, SpinnerManager
 
-# Применяем патчи ДО создания клиента
+# Apply patches BEFORE creating client
 patch_azure_ai_client()
 patch_magentic_orchestrator()
 patch_magentic_for_event_interception()
@@ -70,7 +51,7 @@ logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
 
-# Контейнеры для streaming сообщений агентов
+# Containers for streaming agent messages
 _message_containers = {}
 _message_accumulated_text = {}
 
@@ -123,7 +104,7 @@ async def on_runstep_event(agent_id: str, event) -> None:
             ThreadMessage
         )
         
-        # Обработка ThreadRun (агент взял задачу) - делегируем в EventRenderer
+        # Handle ThreadRun (agent took task) - delegate to EventRenderer
         if isinstance(event, ThreadRun):
             event.agent_id = agent_id
             if hasattr(event, 'status'):
@@ -131,12 +112,12 @@ async def on_runstep_event(agent_id: str, event) -> None:
                     pass;
                 elif event.status == RunStatus.COMPLETED:
                     st.session_state.current_chat = st.empty()
-                    logger.info(f"ThreadRun COMPLETED: {event}")
+                    SpinnerManager.start("Planning next steps...")
                 else:
                     st.session_state.current_chat = st.chat_message("🤖")
                     st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
                     with st.session_state.current_chat:
-                        EventRenderer.render(event)
+                        EventRenderer.render(event, auto_start_spinner="Processing...")
             return
 
         if isinstance(event, ThreadMessage):
@@ -145,54 +126,61 @@ async def on_runstep_event(agent_id: str, event) -> None:
 
         if isinstance(event, MessageDeltaChunk):
             if agent_id in _message_containers:
-                # Извлекаем текст из delta
+                # Extract text from delta
                 if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
                     for content in event.delta.content:
                         if hasattr(content, 'text') and hasattr(content.text, 'value'):
                             _message_accumulated_text[agent_id] += content.text.value
                 
-                # Обновляем контейнер
+                # Update container
                 _message_containers[agent_id].markdown(_message_accumulated_text[agent_id])
             return
 
         if isinstance(event, RunStep):
             run_step = event
 
-            # Обработка MESSAGE_CREATION
+            # Handle MESSAGE_CREATION
             if run_step.type == RunStepType.MESSAGE_CREATION:
-                # IN_PROGRESS - создаем контейнер для streaming
+                # IN_PROGRESS - create container for streaming
                 if run_step.status == RunStepStatus.IN_PROGRESS:
                     if agent_id not in _message_containers:
                         _message_containers[agent_id] = st.session_state.current_chat.empty()
                         _message_accumulated_text[agent_id] = ""
+                        SpinnerManager.stop()
                 
-                # COMPLETED - убираем контейнер, выводим через рендерер
+                # COMPLETED - remove container, display through renderer
                 elif run_step.status == RunStepStatus.COMPLETED:
                     if agent_id in _message_containers:
                         final_text = _message_accumulated_text.get(agent_id, "")
-                        # Убираем streaming контейнер
+                        # Remove streaming container
                         _message_containers[agent_id].empty()
                         del _message_containers[agent_id]
                         del _message_accumulated_text[agent_id]
                         if final_text != "":
                             with st.session_state.current_chat:
-                            # Рендерим через EventRenderer (свернутое по умолчанию)
+                            # Render through EventRenderer (collapsed by default)
                                 EventRenderer.render(final_text)
                             
                             # Save only text content for session persistence
                             st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
                 return
 
-            # Обработка TOOL_CALLS - делегируем в EventRenderer
-            if (event.type == RunStepType.TOOL_CALLS and 
-                hasattr(event, 'step_details') and 
-                hasattr(event.step_details, 'tool_calls') and 
-                event.step_details.tool_calls):
+            # Handle TOOL_CALLS - delegate to EventRenderer
+            if (event.type == RunStepType.TOOL_CALLS):
+            
+                if (hasattr(event, 'step_details') and 
+                    hasattr(event.step_details, 'tool_calls') and 
+                    event.step_details.tool_calls):
 
-                with st.session_state.current_chat:
-                    EventRenderer.render(event)
-                st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-            return;
+                    with st.session_state.current_chat:
+                        EventRenderer.render(event)
+                    st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
+                    SpinnerManager.stop()
+                else:
+                    with st.session_state.current_chat:
+                        SpinnerManager.start("Running tool...")
+
+            return
         
     except ImportError:
         logger.warning("Azure AI models not available for RunStep processing")
@@ -209,11 +197,11 @@ async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
     if isinstance(event, MagenticOrchestratorMessageEvent):
         
         if event.kind == "user_task":
-            pass;
+            SpinnerManager.start("Analyzing your request...")
             return;
-        # Рендерим через EventRenderer
+        # Render through EventRenderer
         with st.chat_message("assistant"):
-            EventRenderer.render(event)
+            EventRenderer.render(event, auto_start_spinner="Delegating to assistants...")
             st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
     
     elif isinstance(event, MagenticFinalResultEvent):
@@ -485,6 +473,7 @@ async def delete_file_from_vector_store(filename: str, vector_store_id: str, con
 
 def main():
 
+
     initialize_app()
 
     config = get_config()
@@ -615,6 +604,7 @@ def main():
     )
 
     async def run_workflow(prompt: str):
+        SpinnerManager.start("Planning your request...")
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -629,7 +619,7 @@ def main():
             if vector_store_id:
                 logger.info(f'File Search Tool enabled with vector store: {vector_store_id}')
             
-            # Создаем отдельные threads для каждого агента
+            # Create separate threads for each agent
             facts_identifier_thread = await project_client.agents.threads.create() if st.session_state.get("facts_identifier_thread", None) is None else st.session_state.facts_identifier_thread
             sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
             sql_validator_thread = await project_client.agents.threads.create() if st.session_state.get("sql_validator_thread", None) is None else st.session_state.sql_validator_thread
@@ -639,7 +629,7 @@ def main():
             orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
 
             
-            # Создаем отдельные клиенты для каждого агента
+            # Create separate clients for each agent
             async with (
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=facts_identifier_thread.id) as facts_identifier_client,
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_builder_thread.id) as sql_builder_client,
@@ -762,7 +752,7 @@ NEVER invent table names or information not found in the knowledge base!""",
                 st.session_state.knowledge_base_thread = knowledge_base_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
                 
-                # Устанавливаем глобальные callbacks для workaround модуля
+                # Set global callbacks for workaround module
                 agent_executor_workaround.global_runstep_callback = on_runstep_event
 
                 # Build participants dict
@@ -834,6 +824,9 @@ Your job:
                 )
 
                 await workflow.run(prompt)
+
+                SpinnerManager.stop()
+
                     
 
     if prompt := st.chat_input("Say something:"):
@@ -843,9 +836,6 @@ Your job:
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            
-            # Используем sync-over- async для Streamlit
-            #nest_asyncio.apply()
             asyncio.run(run_workflow(prompt))
         
 
