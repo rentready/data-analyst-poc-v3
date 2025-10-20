@@ -228,10 +228,13 @@ def initialize_app() -> None:
     # Setup environment
     setup_environment_variables()
 
-    setup_observability(
-        applicationinsights_connection_string="InstrumentationKey=d42fd109-d1df-4811-aa5b-a91f82e8bf58;IngestionEndpoint=https://westus-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus.livediagnostics.monitor.azure.com/;ApplicationId=f1e8c22d-2f35-431b-962e-b5732f7ad714",
-        enable_sensitive_data=True
-    )
+    # Setup observability with connection string from secrets
+    connection_string = st.secrets.get("observability", {}).get("applicationinsights_connection_string")
+    if connection_string:
+        setup_observability(
+            applicationinsights_connection_string=connection_string,
+            enable_sensitive_data=True
+        )
     
     # Get authentication configuration
     client_id, tenant_id, _ = get_auth_config()
