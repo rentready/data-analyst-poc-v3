@@ -15,6 +15,10 @@ from agent_framework.azure import AzureAIAgentClient
 from datetime import datetime, timezone
 from azure.ai.projects.aio import AIProjectClient
 
+from agent_framework.observability import setup_observability, get_tracer
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace.span import format_trace_id
+
 from src.agent_instructions import (
     SQL_BUILDER_INSTRUCTIONS,
     SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
@@ -223,6 +227,11 @@ def initialize_app() -> None:
     
     # Setup environment
     setup_environment_variables()
+
+    setup_observability(
+        applicationinsights_connection_string="InstrumentationKey=d42fd109-d1df-4811-aa5b-a91f82e8bf58;IngestionEndpoint=https://westus-0.in.applicationinsights.azure.com/;LiveEndpoint=https://westus.livediagnostics.monitor.azure.com/;ApplicationId=f1e8c22d-2f35-431b-962e-b5732f7ad714",
+        enable_sensitive_data=True
+    )
     
     # Get authentication configuration
     client_id, tenant_id, _ = get_auth_config()
@@ -400,12 +409,14 @@ def main():
                     
 
     if prompt := st.chat_input("Say something:"):
-            # User message - simple dict (not an event)
-            st.session_state.messages.append({"role": "user", "content": prompt, "agent_id": None})
-            
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
+        # User message - simple dict (not an event)
+        st.session_state.messages.append({"role": "user", "content": prompt, "agent_id": None})
+        
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        with get_tracer().start_as_current_span(f"Magentic Workflow prompt: {prompt}", kind=SpanKind.CLIENT) as current_span:
+            print(f"Trace ID: {format_trace_id(current_span.get_span_context().trace_id)}")
             asyncio.run(run_workflow(prompt))
         
 
