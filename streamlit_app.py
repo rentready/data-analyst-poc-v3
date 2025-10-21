@@ -294,7 +294,6 @@ def main():
             # Create separate threads for each agent
             facts_identifier_thread = await project_client.agents.threads.create() if st.session_state.get("facts_identifier_thread", None) is None else st.session_state.facts_identifier_thread
             sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
-            sql_validator_thread = await project_client.agents.threads.create() if st.session_state.get("sql_validator_thread", None) is None else st.session_state.sql_validator_thread
             data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
             glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
             orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
@@ -302,7 +301,7 @@ def main():
             
             # Create separate clients for each agent
             async with (
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as agent_client
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = orchestrator_thread.id) as agent_client
             ):
                 facts_identifier_agent = agent_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
@@ -324,7 +323,7 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    thread_id=facts_identifier_thread.id,
+                    conversation_id=facts_identifier_thread.id,
                     temperature=0.1,
                     additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
                 )
@@ -339,7 +338,7 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    thread_id=sql_builder_thread.id,
+                    conversation_id=sql_builder_thread.id,
                     temperature=0.1,
                     additional_instructions=SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
                 )
@@ -355,7 +354,7 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    thread_id=data_extractor_thread.id,
+                    conversation_id=data_extractor_thread.id,
                     temperature=0.1,
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
@@ -365,14 +364,13 @@ def main():
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
                     instructions=st.secrets["glossary"]["instructions"],
-                    thread_id=glossary_thread.id,
+                    conversation_id=glossary_thread.id,
                     temperature=0.1,
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
                 )
 
                 st.session_state.facts_identifier_thread = facts_identifier_thread
                 st.session_state.sql_builder_thread = sql_builder_thread
-                st.session_state.sql_validator_thread = sql_validator_thread
                 st.session_state.data_extractor_thread = data_extractor_thread
                 st.session_state.glossary_thread = glossary_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
@@ -383,7 +381,7 @@ def main():
                 workflow = (
                     MagenticBuilder()
                     .participants(
-                        glossay = glossary_agent,
+                        glossary = glossary_agent,
                         facts_identifier = facts_identifier_agent,
                         sql_builder = sql_builder_agent,
                         data_extractor = data_extractor_agent
