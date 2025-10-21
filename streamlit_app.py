@@ -329,7 +329,7 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=sql_builder_thread.id,
+                    conversation_id=facts_identifier_thread.id,
                     temperature=0.1,
                     additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
                 )
@@ -388,10 +388,7 @@ def main():
                 workflow = (
                     MagenticBuilder()
                     .participants(
-                        facts_identifier_agent = facts_identifier_agent,
-                        sql_builder = sql_builder_agent,
-                        data_extractor = data_extractor_agent,
-                        glossary = glossary_agent,
+                        data_extractor = data_extractor_agent
                     )
                     .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
