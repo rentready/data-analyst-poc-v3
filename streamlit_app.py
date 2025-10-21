@@ -302,14 +302,9 @@ def main():
             
             # Create separate clients for each agent
             async with (
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=facts_identifier_thread.id) as facts_identifier_client,
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_builder_thread.id) as sql_builder_client,
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=sql_validator_thread.id) as sql_validator_client,
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=data_extractor_thread.id) as data_extractor_client,
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=glossary_thread.id) as glossary_client,
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id=orchestrator_thread.id) as orchestrator_client,
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY]) as agent_client
             ):
-                facts_identifier_agent = facts_identifier_client.create_agent(
+                facts_identifier_agent = agent_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Facts Identifier",
                     description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
@@ -329,12 +324,12 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=facts_identifier_thread.id,
+                    thread_id=facts_identifier_thread.id,
                     temperature=0.1,
                     additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
                 )
 
-                sql_builder_agent = sql_builder_client.create_agent(
+                sql_builder_agent = agent_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="SQL Builder",
                     user="sql_builder",
@@ -344,14 +339,14 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=sql_builder_thread.id,
+                    thread_id=sql_builder_thread.id,
                     temperature=0.1,
                     additional_instructions=SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
                 )
 
                 logger.info(f"Created agent {sql_builder_agent}")
 
-                data_extractor_agent = data_extractor_client.create_agent(
+                data_extractor_agent = agent_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Data Extractor",
                     description=DATA_EXTRACTOR_DESCRIPTION,
@@ -360,17 +355,17 @@ def main():
                         mcp_tool_with_approval,
                         get_time
                     ],
-                    conversation_id=data_extractor_thread.id,
+                    thread_id=data_extractor_thread.id,
                     temperature=0.1,
                     additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
                 )
 
-                glossary_agent = glossary_client.create_agent(
+                glossary_agent = agent_client.create_agent(
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
                     instructions=st.secrets["glossary"]["instructions"],
-                    conversation_id=glossary_thread.id,
+                    thread_id=glossary_thread.id,
                     temperature=0.1,
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
                 )
@@ -388,11 +383,14 @@ def main():
                 workflow = (
                     MagenticBuilder()
                     .participants(
+                        glossay = glossary_agent,
+                        facts_identifier = facts_identifier_agent,
+                        sql_builder = sql_builder_agent,
                         data_extractor = data_extractor_agent
                     )
                     .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
-                        chat_client=orchestrator_client,
+                        chat_client=agent_client,
                         instructions=ORCHESTRATOR_INSTRUCTIONS,
 
                         max_round_count=15,
