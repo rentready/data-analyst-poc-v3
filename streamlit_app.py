@@ -52,7 +52,7 @@ from src.middleware.streaming_state import StreamingStateManager
 from src.middleware.spinner_manager import SpinnerManager
 from src.agents.factory import AgentFactory
 from src.agents.thread_manager import ThreadManager
-from src.agents.configs import FACTS_IDENTIFIER_CONFIG, SQL_BUILDER_CONFIG, DATA_EXTRACTOR_CONFIG, GLOSSARY_CONFIG
+from src.workflow.builder import WorkflowBuilder
 
 from src.event_renderer import EventRenderer
 
@@ -97,29 +97,7 @@ st.session_state.current_chat = st.empty()
 st.session_state.current_role = st.empty()
 
 
-async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
-    """
-    The `on_event` callback processes events emitted by the workflow.
-    Events include: orchestrator messages, agent delta updates, agent messages, and final result events.
-    """
-    
-    if isinstance(event, MagenticOrchestratorMessageEvent):
-        
-        if event.kind == "user_task":
-            spinner_manager.start("Analyzing your request...")
-            return;
-        # Render through EventRenderer
-        with st.chat_message("assistant"):
-            EventRenderer.render(event)
-            spinner_manager.start("Delegating to assistants...")
-            st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
-    
-    elif isinstance(event, MagenticFinalResultEvent):
-
-        if event.message is not None:
-            with st.chat_message("assistant"):
-                EventRenderer.render(event)
-                st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+# Orchestrator event handler moved to src/workflow/orchestrator_handler.py
 
 def initialize_app() -> None:
     """
@@ -254,58 +232,11 @@ def main():
                     tools=[mcp_tool_with_approval, get_time]
                 )
                 
-                # Create all agents using factory
-                facts_identifier_agent = agent_factory.create_agent(
-                    FACTS_IDENTIFIER_CONFIG, 
-                    threads["facts_identifier"].id, 
-                    prompt
-                )
+                # Create workflow builder
+                workflow_builder = WorkflowBuilder(agent_factory, spinner_manager)
                 
-                sql_builder_agent = agent_factory.create_agent(
-                    SQL_BUILDER_CONFIG, 
-                    threads["sql_builder"].id
-                )
-                
-                data_extractor_agent = agent_factory.create_agent(
-                    DATA_EXTRACTOR_CONFIG, 
-                    threads["data_extractor"].id
-                )
-                
-                # Glossary agent needs custom instructions from secrets
-                glossary_agent = agent_factory.create_agent(
-                    GLOSSARY_CONFIG, 
-                    threads["glossary"].id,
-                    custom_instructions=st.secrets["glossary"]["instructions"]
-                )
-
-                logger.info(f"Created agent {sql_builder_agent}")
-
-                # Store threads in session state for persistence
-                st.session_state.facts_identifier_thread = threads["facts_identifier"]
-                st.session_state.sql_builder_thread = threads["sql_builder"]
-                st.session_state.data_extractor_thread = threads["data_extractor"]
-                st.session_state.glossary_thread = threads["glossary"]
-                st.session_state.orchestrator_thread = threads["orchestrator"]
-
-                workflow = (
-                    MagenticBuilder()
-                    .participants(
-                        glossary = glossary_agent,
-                        facts_identifier = facts_identifier_agent,
-                        sql_builder = sql_builder_agent,
-                        data_extractor = data_extractor_agent
-                    )
-                    .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
-                    .with_standard_manager(
-                        chat_client=agent_client,
-                        instructions=ORCHESTRATOR_INSTRUCTIONS,
-
-                        max_round_count=15,
-                        max_stall_count=4,
-                        max_reset_count=2,
-                    )
-                    .build()
-                )
+                # Build workflow with all agents
+                workflow = await workflow_builder.build_workflow(agent_client, threads, prompt)
 
                 await workflow.run(prompt)
 
