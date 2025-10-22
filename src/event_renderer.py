@@ -75,16 +75,13 @@ class EventRenderer:
     """Renders run events to Streamlit UI."""
     
     @staticmethod
-    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun'], auto_start_spinner: str = None):
+    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """
         Render event to UI.
         
         Args:
             event: Event to render
-            auto_start_spinner: If provided, start spinner with this text after rendering
         """
-        # Automatically stop spinner before rendering
-        SpinnerManager.stop()
         
         # Magentic events
         if isinstance(event, MagenticOrchestratorMessageEvent):
@@ -119,9 +116,6 @@ class EventRenderer:
         else:
             logger.warning(f"Unknown event type: {type(event)}")
         
-        # Automatically start spinner after rendering if specified
-        if auto_start_spinner:
-            SpinnerManager.start(auto_start_spinner)
     
     @staticmethod
     def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):

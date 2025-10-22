@@ -47,12 +47,14 @@ from agent_framework import (
 )
 from typing import Callable, Awaitable, AsyncIterable
 
-from src.run_step_tool_call_middleware import run_step_tool_calls_middleware
+from src.middleware.agent_events_middleware import agent_events_middleware
+from src.middleware.streaming_state import StreamingStateManager
+from src.middleware.spinner_manager import SpinnerManager
 from src.agents.factory import AgentFactory
 from src.agents.thread_manager import ThreadManager
 from src.agents.configs import FACTS_IDENTIFIER_CONFIG, SQL_BUILDER_CONFIG, DATA_EXTRACTOR_CONFIG, GLOSSARY_CONFIG
 
-from src.event_renderer import EventRenderer, SpinnerManager
+from src.event_renderer import EventRenderer
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -61,9 +63,9 @@ logger = logging.getLogger(__name__)
 import agent_framework
 logger.info(f"🔧 agent_framework version: {agent_framework.__version__ if hasattr(agent_framework, '__version__') else 'unknown'}")
 
-# Containers for streaming agent messages
-_message_containers = {}
-_message_accumulated_text = {}
+# Global state managers (will be initialized in main)
+streaming_state = None
+spinner_manager = None
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -104,11 +106,12 @@ async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
     if isinstance(event, MagenticOrchestratorMessageEvent):
         
         if event.kind == "user_task":
-            SpinnerManager.start("Analyzing your request...")
+            spinner_manager.start("Analyzing your request...")
             return;
         # Render through EventRenderer
         with st.chat_message("assistant"):
-            EventRenderer.render(event, auto_start_spinner="Delegating to assistants...")
+            EventRenderer.render(event)
+            spinner_manager.start("Delegating to assistants...")
             st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
     
     elif isinstance(event, MagenticFinalResultEvent):
@@ -178,10 +181,20 @@ from agent_framework import agent_middleware
 @agent_middleware
 async def tool_calls_middleware(context, next):
     """Middleware that handles tool calls events."""
-    return await run_step_tool_calls_middleware(context, next, on_tool_calls=my_tool_calls_handler)
+    return await agent_events_middleware(
+        context, 
+        next, 
+        streaming_state, 
+        spinner_manager, 
+        on_tool_calls=my_tool_calls_handler
+    )
 
 def main():
-
+    global streaming_state, spinner_manager
+    
+    # Initialize global state managers
+    streaming_state = StreamingStateManager()
+    spinner_manager = SpinnerManager()
 
     initialize_app()
 
@@ -211,7 +224,7 @@ def main():
     )
 
     async def run_workflow(prompt: str):
-        SpinnerManager.start("Planning your request...")
+        spinner_manager.start("Planning your request...")
         
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
@@ -296,7 +309,7 @@ def main():
 
                 await workflow.run(prompt)
 
-                SpinnerManager.stop()
+                spinner_manager.stop()
 
                     
 
