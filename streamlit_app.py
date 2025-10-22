@@ -7,7 +7,7 @@ import asyncio
 from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config
 from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
-from src.auth import initialize_msal_auth
+from src.auth import initialize_msal_auth, get_user_initials
 from agent_framework import HostedMCPTool, MagenticBuilder
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
 from azure.identity.aio import DefaultAzureCredential
@@ -249,6 +249,10 @@ def initialize_app() -> None:
     if not token_credential:
         st.error("❌ Please sign in to use the chatbot.")
         st.stop()
+    
+    # Store auth data in session state for later use
+    if "auth_data" not in st.session_state:
+        st.session_state.auth_data = token_credential
 
 def main():
 
@@ -411,7 +415,11 @@ def main():
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        with get_tracer().start_as_current_span(f"Magentic Workflow prompt: {prompt}", kind=SpanKind.CLIENT) as current_span:
+        # Get user initials
+        user_initials = get_user_initials(st.session_state.get("auth_data", {}))
+        span_name = f"Magentic ({user_initials}): {prompt}" if user_initials else f"Magentic: {prompt}"
+        
+        with get_tracer().start_as_current_span(span_name, kind=SpanKind.CLIENT) as current_span:
             print(f"Trace ID: {format_trace_id(current_span.get_span_context().trace_id)}")
             asyncio.run(run_workflow(prompt))
         
