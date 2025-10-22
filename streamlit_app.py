@@ -37,16 +37,19 @@ from agent_framework import (
     MagenticFinalResultEvent,
     MagenticOrchestratorMessageEvent,
     HostedMCPTool, 
-    MagenticBuilder
+    MagenticBuilder,
+    AgentRunContext,
+    AgentRunResponse,
+    AgentRunResponseUpdate,
+    ChatMessage,
+    Role,
+    TextContent
 )
+from typing import Callable, Awaitable, AsyncIterable
 
-import src.workaround_agent_executor as agent_executor_workaround
-from src.workaround_agent_executor import patch_magentic_for_event_interception
+from src.run_step_tool_call_middleware import run_step_tool_calls_middleware
+
 from src.event_renderer import EventRenderer, SpinnerManager
-
-# Apply patches BEFORE creating client
-
-patch_magentic_for_event_interception()
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -62,7 +65,6 @@ _message_accumulated_text = {}
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
 
 st.title("🤖 Data Analyst Chat")
 
@@ -88,108 +90,6 @@ def get_time() -> str:
 
 st.session_state.current_chat = st.empty()
 st.session_state.current_role = st.empty()
-
-async def on_runstep_event(agent_id: str, event) -> None:
-    """
-    Handle RunStep, ThreadRun and MessageDeltaChunk from Azure AI agents.
-    
-    Args:
-        agent_id: ID of the agent that generated the step
-        event: RunStep, ThreadRun or MessageDeltaChunk object from Azure AI
-    """
-    try:
-        from azure.ai.agents.models import (
-            RunStepType,
-            RunStepStatus,
-            MessageDeltaChunk,
-            ThreadRun,
-            RunStep,
-            RunStatus,
-            ThreadMessage
-        )
-        
-        # Handle ThreadRun (agent took task) - delegate to EventRenderer
-        if isinstance(event, ThreadRun):
-            event.agent_id = agent_id
-            if hasattr(event, 'status'):
-                if event.status == RunStatus.QUEUED:
-                    pass;
-                elif event.status == RunStatus.COMPLETED:
-                    st.session_state.current_chat = st.empty()
-                    SpinnerManager.start("Planning next steps...")
-                else:
-                    st.session_state.current_chat = st.chat_message("🤖")
-                    st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-                    with st.session_state.current_chat:
-                        EventRenderer.render(event, auto_start_spinner="Processing...")
-            return
-
-        if isinstance(event, ThreadMessage):
-            pass;
-            return
-
-        if isinstance(event, MessageDeltaChunk):
-            if agent_id in _message_containers:
-                # Extract text from delta
-                if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
-                    for content in event.delta.content:
-                        if hasattr(content, 'text') and hasattr(content.text, 'value'):
-                            _message_accumulated_text[agent_id] += content.text.value
-                
-                # Update container
-                _message_containers[agent_id].markdown(_message_accumulated_text[agent_id])
-            return
-
-        if isinstance(event, RunStep):
-            run_step = event
-
-            # Handle MESSAGE_CREATION
-            if run_step.type == RunStepType.MESSAGE_CREATION:
-                # IN_PROGRESS - create container for streaming
-                if run_step.status == RunStepStatus.IN_PROGRESS:
-                    if agent_id not in _message_containers:
-                        _message_containers[agent_id] = st.session_state.current_chat.empty()
-                        _message_accumulated_text[agent_id] = ""
-                        SpinnerManager.stop()
-                
-                # COMPLETED - remove container, display through renderer
-                elif run_step.status == RunStepStatus.COMPLETED:
-                    if agent_id in _message_containers:
-                        final_text = _message_accumulated_text.get(agent_id, "")
-                        # Remove streaming container
-                        _message_containers[agent_id].empty()
-                        del _message_containers[agent_id]
-                        del _message_accumulated_text[agent_id]
-                        if final_text != "":
-                            with st.session_state.current_chat:
-                            # Render through EventRenderer (collapsed by default)
-                                EventRenderer.render(final_text)
-                            
-                            # Save only text content for session persistence
-                            st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
-                return
-
-            # Handle TOOL_CALLS - delegate to EventRenderer
-            if (event.type == RunStepType.TOOL_CALLS):
-            
-                if (hasattr(event, 'step_details') and 
-                    hasattr(event.step_details, 'tool_calls') and 
-                    event.step_details.tool_calls):
-
-                    with st.session_state.current_chat:
-                        EventRenderer.render(event)
-                    st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-                    SpinnerManager.stop()
-                else:
-                    with st.session_state.current_chat:
-                        SpinnerManager.start("Running tool...")
-
-            return
-        
-    except ImportError:
-        logger.warning("Azure AI models not available for RunStep processing")
-    except Exception as e:
-        logger.error(f"Error processing RunStep: {e}", exc_info=True)
 
 
 async def on_orchestrator_event(event: MagenticCallbackEvent) -> None:
@@ -253,6 +153,29 @@ def initialize_app() -> None:
     # Store auth data in session state for later use
     if "auth_data" not in st.session_state:
         st.session_state.auth_data = token_credential
+    
+    # No modifications - just pass through
+
+# Вариант 1: С вашим callback
+def my_tool_calls_handler(event, agent_id):
+    """Handle tool calls event."""
+    from azure.ai.agents.models import RunStepType
+    
+    if event.type == RunStepType.TOOL_CALLS:
+        pass;
+        # Ваш код
+        #with st.session_state.current_chat:
+        #    EventRenderer.render(event)
+        #st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
+        #SpinnerManager.stop()
+
+# Создаем middleware функцию с правильным декоратором
+from agent_framework import agent_middleware
+
+@agent_middleware
+async def tool_calls_middleware(context, next):
+    """Middleware that handles tool calls events."""
+    return await run_step_tool_calls_middleware(context, next, on_tool_calls=my_tool_calls_handler)
 
 def main():
 
@@ -286,6 +209,7 @@ def main():
 
     async def run_workflow(prompt: str):
         SpinnerManager.start("Planning your request...")
+        
         # Prepare common client parameters
         client_params = {"model_id": model_name, "api_key": api_key}
         if base_url:
@@ -322,7 +246,7 @@ def main():
                         
                         You will justify what tools you are going to use before requesting them.
                         """,
-
+                    middleware=[tool_calls_middleware],
                     tools=[
                         mcp_tool_with_approval,
                         get_time
@@ -338,6 +262,7 @@ def main():
                     user="sql_builder",
                     description=SQL_BUILDER_DESCRIPTION,
                     instructions=SQL_BUILDER_INSTRUCTIONS,
+                    middleware=[tool_calls_middleware],
                     tools=[
                         mcp_tool_with_approval,
                         get_time
@@ -354,6 +279,7 @@ def main():
                     name="Data Extractor",
                     description=DATA_EXTRACTOR_DESCRIPTION,
                     instructions=DATA_EXTRACTOR_INSTRUCTIONS,
+                    middleware=[tool_calls_middleware],
                     tools=[
                         mcp_tool_with_approval,
                         get_time
@@ -368,6 +294,7 @@ def main():
                     name="Glossary",
                     description=GLOSSARY_AGENT_DESCRIPTION,
                     instructions=st.secrets["glossary"]["instructions"],
+                    middleware=[tool_calls_middleware],
                     conversation_id=glossary_thread.id,
                     temperature=0.1,
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
@@ -378,9 +305,6 @@ def main():
                 st.session_state.data_extractor_thread = data_extractor_thread
                 st.session_state.glossary_thread = glossary_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
-                
-                # Set global callbacks for workaround module
-                agent_executor_workaround.global_runstep_callback = on_runstep_event
 
                 workflow = (
                     MagenticBuilder()
