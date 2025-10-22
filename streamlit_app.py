@@ -48,6 +48,9 @@ from agent_framework import (
 from typing import Callable, Awaitable, AsyncIterable
 
 from src.run_step_tool_call_middleware import run_step_tool_calls_middleware
+from src.agents.factory import AgentFactory
+from src.agents.thread_manager import ThreadManager
+from src.agents.configs import FACTS_IDENTIFIER_CONFIG, SQL_BUILDER_CONFIG, DATA_EXTRACTOR_CONFIG, GLOSSARY_CONFIG
 
 from src.event_renderer import EventRenderer, SpinnerManager
 
@@ -219,92 +222,57 @@ def main():
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
-            # Create separate threads for each agent
-            facts_identifier_thread = await project_client.agents.threads.create() if st.session_state.get("facts_identifier_thread", None) is None else st.session_state.facts_identifier_thread
-            sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
-            data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
-            glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
-            orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
-
+            # Create thread manager
+            thread_manager = ThreadManager(project_client)
+            
+            # Create threads for all agents
+            agent_names = ["facts_identifier", "sql_builder", "data_extractor", "glossary", "orchestrator"]
+            threads = await thread_manager.get_all_threads(agent_names)
             
             # Create separate clients for each agent
             async with (
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = orchestrator_thread.id) as agent_client
+                AzureAIAgentClient(project_client=project_client, model_deployment_name=config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = threads["orchestrator"].id) as agent_client
             ):
-                facts_identifier_agent = agent_client.create_agent(
+                # Create agent factory
+                agent_factory = AgentFactory(
+                    agent_client=agent_client,
                     model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="Facts Identifier",
-                    description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
-                    instructions=f"""for the user request: {prompt}
-
-                        Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
-                        1. Try exact match first (WHERE name = 'value')
-                        2. If not found, try partial match (WHERE name LIKE '%value%')
-                        3. If still not found, try similar names
-                        
-                        Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
-                        
-                        You will justify what tools you are going to use before requesting them.
-                        """,
                     middleware=[tool_calls_middleware],
-                    tools=[
-                        mcp_tool_with_approval,
-                        get_time
-                    ],
-                    conversation_id=facts_identifier_thread.id,
-                    temperature=0.1,
-                    additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
+                    tools=[mcp_tool_with_approval, get_time]
                 )
-
-                sql_builder_agent = agent_client.create_agent(
-                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="SQL Builder",
-                    user="sql_builder",
-                    description=SQL_BUILDER_DESCRIPTION,
-                    instructions=SQL_BUILDER_INSTRUCTIONS,
-                    middleware=[tool_calls_middleware],
-                    tools=[
-                        mcp_tool_with_approval,
-                        get_time
-                    ],
-                    conversation_id=sql_builder_thread.id,
-                    temperature=0.1,
-                    additional_instructions=SQL_BUILDER_ADDITIONAL_INSTRUCTIONS,
+                
+                # Create all agents using factory
+                facts_identifier_agent = agent_factory.create_agent(
+                    FACTS_IDENTIFIER_CONFIG, 
+                    threads["facts_identifier"].id, 
+                    prompt
+                )
+                
+                sql_builder_agent = agent_factory.create_agent(
+                    SQL_BUILDER_CONFIG, 
+                    threads["sql_builder"].id
+                )
+                
+                data_extractor_agent = agent_factory.create_agent(
+                    DATA_EXTRACTOR_CONFIG, 
+                    threads["data_extractor"].id
+                )
+                
+                # Glossary agent needs custom instructions from secrets
+                glossary_agent = agent_factory.create_agent(
+                    GLOSSARY_CONFIG, 
+                    threads["glossary"].id,
+                    custom_instructions=st.secrets["glossary"]["instructions"]
                 )
 
                 logger.info(f"Created agent {sql_builder_agent}")
 
-                data_extractor_agent = agent_client.create_agent(
-                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="Data Extractor",
-                    description=DATA_EXTRACTOR_DESCRIPTION,
-                    instructions=DATA_EXTRACTOR_INSTRUCTIONS,
-                    middleware=[tool_calls_middleware],
-                    tools=[
-                        mcp_tool_with_approval,
-                        get_time
-                    ],
-                    conversation_id=data_extractor_thread.id,
-                    temperature=0.1,
-                    additional_instructions=DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS,
-                )
-
-                glossary_agent = agent_client.create_agent(
-                    model=config[MODEL_DEPLOYMENT_NAME_KEY],
-                    name="Glossary",
-                    description=GLOSSARY_AGENT_DESCRIPTION,
-                    instructions=st.secrets["glossary"]["instructions"],
-                    middleware=[tool_calls_middleware],
-                    conversation_id=glossary_thread.id,
-                    temperature=0.1,
-                    additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
-                )
-
-                st.session_state.facts_identifier_thread = facts_identifier_thread
-                st.session_state.sql_builder_thread = sql_builder_thread
-                st.session_state.data_extractor_thread = data_extractor_thread
-                st.session_state.glossary_thread = glossary_thread
-                st.session_state.orchestrator_thread = orchestrator_thread
+                # Store threads in session state for persistence
+                st.session_state.facts_identifier_thread = threads["facts_identifier"]
+                st.session_state.sql_builder_thread = threads["sql_builder"]
+                st.session_state.data_extractor_thread = threads["data_extractor"]
+                st.session_state.glossary_thread = threads["glossary"]
+                st.session_state.orchestrator_thread = threads["orchestrator"]
 
                 workflow = (
                     MagenticBuilder()
