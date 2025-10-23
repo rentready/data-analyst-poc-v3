@@ -80,7 +80,6 @@ async def agent_events_middleware(
         on_tool_calls: Optional callback for tool calls
     """
     agent_id = getattr(context.agent, 'id', None)
-    agent_name = getattr(context.agent, 'name', None)
     
     # Execute the original agent logic
     await next(context)
@@ -108,7 +107,9 @@ async def agent_events_middleware(
                             
                             # Обрабатываем ThreadRun события
                             elif event_class == 'ThreadRun':
-                                await handle_threadrun_event(agent_name, event, spinner_manager)
+                                # Safely add agent_name to metadata
+                                event.agent_name = getattr(context.agent, 'name', None) # just a hack
+                                await handle_threadrun_event(agent_id, event, spinner_manager)
                             
                             # Обрабатываем MessageDeltaChunk события
                             elif event_class == 'MessageDeltaChunk':
