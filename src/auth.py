@@ -2,9 +2,8 @@
 
 from streamlit_msal import Msal
 
-from .constants import (
-    AUTHORITY_BASE_URL
-)
+# Constants used only in this file
+AUTHORITY_BASE_URL = "https://login.microsoftonline.com"
 
 def initialize_msal_auth(client_id: str, tenant_id: str) -> dict:
     """Initialize MSAL authentication UI.

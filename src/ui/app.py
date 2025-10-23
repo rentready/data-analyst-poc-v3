@@ -6,8 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config
-from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
+from src.config import setup_environment_variables
 from src.mcp_client import get_mcp_token_sync
 from src.auth import initialize_msal_auth, get_user_initials
 from src.ui.thread_manager import ThreadManager
@@ -42,9 +41,11 @@ class DataAnalystApp:
     
     def initialize(self) -> None:
         """Initialize application: config, auth, MCP, session state."""
-        # Get configuration
-        self.config = get_config()
-        if not self.config:
+        # Get configuration directly from secrets
+        try:
+            self.azure_endpoint = st.secrets["azure_ai_foundry"]["proj_endpoint"]
+            self.model_name = st.secrets["azure_ai_foundry"]["model_deployment_name"]
+        except KeyError:
             st.error("❌ Please configure your Azure AI Foundry settings in Streamlit secrets.")
             st.stop()
         
@@ -60,8 +61,11 @@ class DataAnalystApp:
             )
         
         # Get authentication configuration
-        client_id, tenant_id, _ = get_auth_config()
-        if not client_id or not tenant_id:
+        try:
+            client_id = st.secrets["env"]["AZURE_CLIENT_ID"]
+            tenant_id = st.secrets["env"]["AZURE_TENANT_ID"]
+        except KeyError:
+            st.error("❌ Please configure Azure AD settings in Streamlit secrets.")
             st.stop()
         
         # Initialize MSAL authentication in sidebar
@@ -78,13 +82,21 @@ class DataAnalystApp:
             st.session_state.auth_data = token_credential
         
         # Get OpenAI configuration
-        self.openai_config = get_openai_config()
-        if not self.openai_config:
+        try:
+            self.openai_api_key = st.secrets["open_ai"]["api_key"]
+            self.openai_model = st.secrets["open_ai"]["model"]
+            self.openai_base_url = st.secrets["open_ai"].get("base_url")
+        except KeyError:
             st.error("❌ Please configure OpenAI settings in Streamlit secrets.")
             st.stop()
         
         # Get MCP configuration
-        self.mcp_config = get_mcp_config()
+        try:
+            self.mcp_server_url = st.secrets["mcp"]["mcp_server_url"]
+            self.mcp_allowed_tools = st.secrets["mcp"].get("allowed_tools", [])
+        except KeyError:
+            self.mcp_server_url = None
+            self.mcp_allowed_tools = []
         
         # Initialize state managers
         self.streaming_state = StreamingStateManager()
@@ -115,20 +127,28 @@ class DataAnalystApp:
         self.spinner_manager.start("Planning your request...")
         
         # Prepare common client parameters
-        api_key = self.openai_config[OPENAI_API_KEY]
-        model_name = self.openai_config[OPENAI_MODEL_KEY]
-        base_url = self.openai_config.get(OPENAI_BASE_URL_KEY)
+        api_key = self.openai_api_key
+        model_name = self.openai_model
+        base_url = self.openai_base_url
 
-        mcp_token = get_mcp_token_sync(self.mcp_config)
+        # Get MCP token if MCP is configured
+        mcp_token = None
+        if self.mcp_server_url:
+            mcp_config = {
+                "mcp_client_id": st.secrets["mcp"]["mcp_client_id"],
+                "mcp_client_secret": st.secrets["mcp"]["mcp_client_secret"],
+                "AZURE_TENANT_ID": st.secrets["env"]["AZURE_TENANT_ID"]
+            }
+            mcp_token = get_mcp_token_sync(mcp_config)
 
         # With approval mode and allowed tools
         mcp_tool_with_approval = HostedMCPTool(
             name="rentready_mcp",
             description="Rent Ready MCP tool",
-            url=self.mcp_config[MCP_SERVER_URL_KEY],
+            url=self.mcp_server_url,
             approval_mode="never_require",
-            allowed_tools=self.mcp_config.get(MCP_ALLOWED_TOOLS_KEY, []),
-            headers={"Authorization": f"Bearer {mcp_token}"},
+            allowed_tools=self.mcp_allowed_tools,
+            headers={"Authorization": f"Bearer {mcp_token}"} if mcp_token else {},
         )
 
         # Prepare common client parameters
@@ -138,7 +158,7 @@ class DataAnalystApp:
 
         async with (
             DefaultAzureCredential() as credential,
-            AIProjectClient(endpoint=self.config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
+            AIProjectClient(endpoint=self.azure_endpoint, credential=credential) as project_client,
         ):
             # Create thread manager
             thread_manager = ThreadManager(project_client)
@@ -153,7 +173,7 @@ class DataAnalystApp:
             # Create workflow builder
             workflow_builder = WorkflowBuilder(
                 project_client=project_client,
-                model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
+                model=self.model_name,
                 middleware=[self._create_tool_calls_middleware(event_handler)],
                 tools=[mcp_tool_with_approval, self.get_time],
                 spinner_manager=self.spinner_manager,

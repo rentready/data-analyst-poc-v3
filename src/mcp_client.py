@@ -4,10 +4,11 @@ import logging
 import requests
 from typing import Optional, Dict
 
-from .constants import (
-    MCP_CLIENT_ID_KEY, MCP_CLIENT_SECRET_KEY,
-    AZURE_TENANT_ID_KEY, AUTHORITY_BASE_URL
-)
+# Constants used only in this file
+MCP_CLIENT_ID_KEY = "mcp_client_id"
+MCP_CLIENT_SECRET_KEY = "mcp_client_secret"
+AZURE_TENANT_ID_KEY = "AZURE_TENANT_ID"
+AUTHORITY_BASE_URL = "https://login.microsoftonline.com"
 
 logger = logging.getLogger(__name__)
 
