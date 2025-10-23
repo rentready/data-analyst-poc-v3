@@ -41,20 +41,32 @@ async def agent_events_middleware(
                             event_class = event.__class__.__name__
                             logging.info(f"📦 Event type: {event_class}")
                             
-                            # Добавляем agent_id к событию
-                            event.agent_id = agent_id
-                            
                             # Делегируем обработку в handler
                             if event_class == 'RunStep':
+                                # Добавляем agent_id к событию (если это объект)
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
                                 await event_handler.handle_runstep(event)
                             elif event_class == 'ThreadRun':
                                 # Safely add agent_name to metadata
-                                event.agent_name = getattr(context.agent, 'name', None)
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
+                                    event.agent_name = getattr(context.agent, 'name', None)
                                 await event_handler.handle_threadrun(event)
                             elif event_class == 'MessageDeltaChunk':
+                                # Добавляем agent_id к событию (если это объект)
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
                                 await event_handler.handle_message_delta(event)
                             elif event_class == 'ThreadMessage':
                                 # ThreadMessage events are usually just passed through
+                                pass
+                            elif event_class == 'str':
+                                # Игнорируем строковые события
+                                logging.debug(f"Ignoring string event: {event}")
+                                pass
+                            else:
+                                logging.warning(f"Unknown event class: {event_class}")
                                 pass
                 
                 yield chunk

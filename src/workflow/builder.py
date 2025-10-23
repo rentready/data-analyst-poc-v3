@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, agent_client, model: str, middleware: list, tools: list, spinner_manager):
+    def __init__(self, agent_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
         """
         Initialize workflow builder.
         
@@ -25,12 +25,14 @@ class WorkflowBuilder:
             middleware: List of middleware functions
             tools: List of tools available to agents
             spinner_manager: Spinner manager instance
+            event_handler: Unified event handler instance
         """
         self.agent_client = agent_client
         self.model = model
         self.middleware = middleware
         self.tools = tools
         self.spinner_manager = spinner_manager
+        self.event_handler = event_handler
     
     async def build_workflow(self, threads: dict, prompt: str):
         """
@@ -147,7 +149,7 @@ Present data in tables or structured format.""",
                 data_extractor=data_extractor_agent
             )
             .on_event(
-                lambda event: on_orchestrator_event(event, self.spinner_manager), 
+                lambda event: on_orchestrator_event(event, self.event_handler), 
                 mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(

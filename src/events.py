@@ -106,6 +106,35 @@ class StreamlitEventHandler:
         
         except Exception as e:
             logger.error(f"Error handling MessageDelta: {e}")
+    
+    async def handle_orchestrator_message(self, event: Any) -> None:
+        """Обработка MagenticOrchestratorMessageEvent событий"""
+        try:
+            if event.kind == "user_task":
+                self.spinner_manager.start("Analyzing your request...")
+                return
+            
+            # Render through EventRenderer
+            from src.event_renderer import EventRenderer
+            with st.chat_message("assistant"):
+                EventRenderer.render(event)
+                self.spinner_manager.start("Delegating to assistants...")
+                st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+        
+        except Exception as e:
+            logger.error(f"Error handling OrchestratorMessage: {e}")
+    
+    async def handle_final_result(self, event: Any) -> None:
+        """Обработка MagenticFinalResultEvent событий"""
+        try:
+            if event.message is not None:
+                from src.event_renderer import EventRenderer
+                with st.chat_message("assistant"):
+                    EventRenderer.render(event)
+                    st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+        
+        except Exception as e:
+            logger.error(f"Error handling FinalResult: {e}")
 
 
 def create_streamlit_event_handler(streaming_state, spinner_manager) -> StreamlitEventHandler:

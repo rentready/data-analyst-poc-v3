@@ -1,38 +1,22 @@
-"""Workflow-level event handler for orchestrator events."""
+"""Workflow-level event handler for orchestrator events - now uses unified event system."""
 
-import streamlit as st
 from agent_framework import (
     MagenticCallbackEvent,
     MagenticOrchestratorMessageEvent,
     MagenticFinalResultEvent
 )
-from src.event_renderer import EventRenderer
-from src.middleware.spinner_manager import SpinnerManager
 
-async def on_orchestrator_event(event: MagenticCallbackEvent, spinner_manager: SpinnerManager) -> None:
+async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
     """
-    Handle workflow-level events (orchestrator messages, final results).
+    Handle workflow-level events (orchestrator messages, final results) via unified event handler.
     
     Args:
         event: Magentic callback event
-        spinner_manager: Spinner manager instance
+        event_handler: Unified event handler instance
     """
     
     if isinstance(event, MagenticOrchestratorMessageEvent):
-        
-        if event.kind == "user_task":
-            spinner_manager.start("Analyzing your request...")
-            return
-        
-        # Render through EventRenderer
-        with st.chat_message("assistant"):
-            EventRenderer.render(event)
-            spinner_manager.start("Delegating to assistants...")
-            st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+        await event_handler.handle_orchestrator_message(event)
     
     elif isinstance(event, MagenticFinalResultEvent):
-
-        if event.message is not None:
-            with st.chat_message("assistant"):
-                EventRenderer.render(event)
-                st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+        await event_handler.handle_final_result(event)
