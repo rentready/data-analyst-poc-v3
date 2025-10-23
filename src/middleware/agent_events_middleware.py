@@ -7,60 +7,9 @@ import streamlit as st
 import logging
 
 # Импорты для работы с событиями
-try:
-    from src.event_renderer import EventRenderer
-    from src.middleware.spinner_manager import SpinnerManager
-    from src.middleware.streaming_state import StreamingStateManager
-except ImportError:
-    # Fallback если модули недоступны
-    class EventRenderer:
-        @staticmethod
-        def render(event, auto_start_spinner=None):
-            st.write(f"Event: {type(event).__name__}")
-    
-    class SpinnerManager:
-        @staticmethod
-        def start(message):
-            st.write(f"🔄 {message}")
-        
-        @staticmethod
-        def stop():
-            pass
-    
-    class StreamingStateManager:
-        def __init__(self):
-            self._containers = {}
-            self._accumulated_text = {}
-        
-        def start_streaming(self, agent_id, container):
-            self._containers[agent_id] = container
-            self._accumulated_text[agent_id] = ""
-        
-        def append_text(self, agent_id, text):
-            if agent_id in self._accumulated_text:
-                self._accumulated_text[agent_id] += text
-        
-        def get_accumulated_text(self, agent_id):
-            return self._accumulated_text.get(agent_id, "")
-        
-        def get_container(self, agent_id):
-            return self._containers.get(agent_id)
-        
-        def update_container(self, agent_id, content):
-            container = self.get_container(agent_id)
-            if container:
-                container.markdown(content)
-        
-        def end_streaming(self, agent_id):
-            final_text = self._accumulated_text.get(agent_id, "")
-            if agent_id in self._containers:
-                del self._containers[agent_id]
-            if agent_id in self._accumulated_text:
-                del self._accumulated_text[agent_id]
-            return final_text
-        
-        def is_streaming(self, agent_id):
-            return agent_id in self._containers
+from src.event_renderer import EventRenderer
+from src.middleware.spinner_manager import SpinnerManager
+from src.middleware.streaming_state import StreamingStateManager
 
 async def agent_events_middleware(
     context: AgentRunContext, 
