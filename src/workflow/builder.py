@@ -3,14 +3,33 @@
 from agent_framework import (
     MagenticBuilder,
     MagenticCallbackMode,
-    AgentRunContext
+    AgentRunContext,
+    MagenticCallbackEvent,
+    MagenticOrchestratorMessageEvent,
+    MagenticFinalResultEvent
 )
 from src.agent_instructions import ORCHESTRATOR_INSTRUCTIONS
-from src.workflow.orchestrator_handler import on_orchestrator_event
 import streamlit as st
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
+    """
+    Handle workflow-level events (orchestrator messages, final results) via unified event handler.
+    
+    Args:
+        event: Magentic callback event
+        event_handler: Unified event handler instance
+    """
+    
+    if isinstance(event, MagenticOrchestratorMessageEvent):
+        await event_handler.handle_orchestrator_message(event)
+    
+    elif isinstance(event, MagenticFinalResultEvent):
+        await event_handler.handle_final_result(event)
+
 
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
