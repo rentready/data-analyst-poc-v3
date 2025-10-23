@@ -10,7 +10,7 @@ from src.config import get_config, get_mcp_config, setup_environment_variables, 
 from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth, get_user_initials
-from src.agents.thread_manager import ThreadManager
+from src.ui.thread_manager import ThreadManager
 from src.workflow.builder import WorkflowBuilder
 from src.middleware.streaming_state import StreamingStateManager
 from src.middleware.spinner_manager import SpinnerManager
