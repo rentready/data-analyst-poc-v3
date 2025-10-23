@@ -59,14 +59,15 @@ class StreamingStateManager:
     def update_container(self, agent_id: str, content: str) -> None:
         """
         Update container with current content.
+        Note: Actual rendering is delegated to EventRenderer.
         
         Args:
             agent_id: Unique identifier for the agent
             content: Content to display in container
         """
-        container = self.get_container(agent_id)
-        if container:
-            container.markdown(content)
+        # Just store the content, rendering is handled by EventRenderer
+        # This method is kept for compatibility but does not render
+        pass
     
     def end_streaming(self, agent_id: str) -> str:
         """
