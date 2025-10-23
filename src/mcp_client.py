@@ -3,7 +3,6 @@
 import logging
 import requests
 from typing import Optional, Dict
-import streamlit as st
 
 from .constants import (
     MCP_CLIENT_ID_KEY, MCP_CLIENT_SECRET_KEY,
@@ -74,22 +73,3 @@ def get_mcp_token_sync(config: Dict[str, str]) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error getting MCP access token: {e}")
         return None
-
-
-def display_mcp_status(config: Optional[Dict[str, str]], token: Optional[str]) -> None:
-    """Display MCP status in Streamlit UI.
-    
-    Args:
-        config: MCP configuration dictionary
-        token: Current MCP token (if any)
-    """
-    if config is None:
-        st.warning("⚠️ MCP not configured")
-        st.info("💡 Add MCP configuration to secrets.toml to enable functionality")
-        return
-    
-    if token:
-        st.success("✅ MCP tools ready for use")
-    else:
-        st.error("❌ Failed to obtain MCP token")
-        st.info("💡 Check MCP settings in secrets.toml")
