@@ -6,9 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.config import setup_environment_variables
-from src.mcp_client import get_mcp_token_sync
-from src.auth import initialize_msal_auth, get_user_initials
+from src.credentials import setup_environment_variables, get_mcp_token_sync, initialize_msal_auth, get_user_initials
 from src.ui.thread_manager import ThreadManager
 from src.workflow.builder import WorkflowBuilder
 from src.middleware.streaming_state import StreamingStateManager
