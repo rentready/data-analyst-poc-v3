@@ -17,6 +17,8 @@ class StreamlitEventHandler:
     def __init__(self, streaming_state, spinner_manager):
         self.streaming_state = streaming_state
         self.spinner_manager = spinner_manager
+        from src.event_renderer import EventRenderer
+        self.event_renderer = EventRenderer()
     
     async def handle_runstep(self, event: Any) -> None:
         """Обработка RunStep событий (Azure AI)"""
@@ -28,7 +30,7 @@ class StreamlitEventHandler:
                 if event.status == RunStepStatus.IN_PROGRESS:
                     if not self.streaming_state.is_streaming(event.agent_id):
                         # Создаем контейнер и начинаем стриминг
-                        container = EventRenderer.create_message_container()
+                        container = self.event_renderer.create_message_container()
                         self.streaming_state.start_streaming(event.agent_id, container)
                         self.spinner_manager.stop()
                 
@@ -36,14 +38,14 @@ class StreamlitEventHandler:
                     if self.streaming_state.is_streaming(event.agent_id):
                         final_text = self.streaming_state.end_streaming(event.agent_id)
                         if final_text:
-                            EventRenderer.render_agent_text(final_text, event.agent_id)
+                            self.event_renderer.render_agent_text(final_text, event.agent_id)
                 return
             
             if event.type == RunStepType.TOOL_CALLS:
                 if (hasattr(event, 'step_details') and 
                     hasattr(event.step_details, 'tool_calls') and 
                     event.step_details.tool_calls):
-                    EventRenderer.render_agent_event(event, event.agent_id)
+                    self.event_renderer.render_agent_event(event, event.agent_id)
                     self.spinner_manager.stop()
                 else:
                     self.spinner_manager.start("Running tool...")
@@ -60,10 +62,10 @@ class StreamlitEventHandler:
             if event.status == RunStatus.QUEUED:
                 pass
             elif event.status == RunStatus.COMPLETED:
-                EventRenderer.reset_message_container()
+                self.event_renderer.reset_message_container()
                 self.spinner_manager.start("Planning next steps...")
             else:
-                EventRenderer.render_agent_event(event, event.agent_id)
+                self.event_renderer.render_agent_event(event, event.agent_id)
                 self.spinner_manager.start("Processing...")
         
         except Exception as e:
@@ -84,7 +86,7 @@ class StreamlitEventHandler:
                 container = self.streaming_state.get_container(event.agent_id)
                 if container:
                     from src.event_renderer import EventRenderer
-                    EventRenderer.render_streaming_text(container, accumulated_text)
+                    self.event_renderer.render_streaming_text(container, accumulated_text)
         
         except Exception as e:
             logger.error(f"Error handling MessageDelta: {e}")
@@ -98,7 +100,7 @@ class StreamlitEventHandler:
                 self.spinner_manager.start("Analyzing your request...")
                 return
             
-            EventRenderer.render_orchestrator_event(event)
+            self.event_renderer.render_orchestrator_event(event)
             self.spinner_manager.start("Delegating to assistants...")
         
         except Exception as e:
@@ -109,7 +111,7 @@ class StreamlitEventHandler:
         try:
             if event.message is not None:
                 from src.event_renderer import EventRenderer
-                EventRenderer.render_orchestrator_event(event)
+                self.event_renderer.render_orchestrator_event(event)
         
         except Exception as e:
             logger.error(f"Error handling FinalResult: {e}")
