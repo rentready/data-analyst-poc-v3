@@ -10,7 +10,6 @@ from src.config import get_config, get_mcp_config, setup_environment_variables, 
 from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth, get_user_initials
-from src.agents.factory import AgentFactory
 from src.agents.thread_manager import ThreadManager
 from src.workflow.builder import WorkflowBuilder
 from src.middleware.streaming_state import StreamingStateManager
@@ -151,19 +150,17 @@ class DataAnalystApp:
             async with (
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=self.config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = threads["orchestrator"].id) as agent_client
             ):
-                # Create agent factory
-                agent_factory = AgentFactory(
+                # Create workflow builder
+                workflow_builder = WorkflowBuilder(
                     agent_client=agent_client,
                     model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
                     middleware=[self._create_tool_calls_middleware()],
-                    tools=[mcp_tool_with_approval, self.get_time]
+                    tools=[mcp_tool_with_approval, self.get_time],
+                    spinner_manager=self.spinner_manager
                 )
                 
-                # Create workflow builder
-                workflow_builder = WorkflowBuilder(agent_factory, self.spinner_manager)
-                
                 # Build workflow with all agents
-                workflow = await workflow_builder.build_workflow(agent_client, threads, prompt)
+                workflow = await workflow_builder.build_workflow(threads, prompt)
 
                 await workflow.run(prompt)
 

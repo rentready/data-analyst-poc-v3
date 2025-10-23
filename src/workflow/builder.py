@@ -5,8 +5,6 @@ from agent_framework import (
     MagenticCallbackMode,
     AgentRunContext
 )
-from src.agents.factory import AgentFactory
-from src.agents.configs import FACTS_IDENTIFIER_CONFIG, SQL_BUILDER_CONFIG, DATA_EXTRACTOR_CONFIG, GLOSSARY_CONFIG
 from src.agent_instructions import ORCHESTRATOR_INSTRUCTIONS
 from src.workflow.orchestrator_handler import on_orchestrator_event
 import streamlit as st
@@ -17,51 +15,117 @@ logger = logging.getLogger(__name__)
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, agent_factory: AgentFactory, spinner_manager):
+    def __init__(self, agent_client, model: str, middleware: list, tools: list, spinner_manager):
         """
         Initialize workflow builder.
         
         Args:
-            agent_factory: Factory for creating agents
+            agent_client: Azure AI agent client
+            model: Model deployment name
+            middleware: List of middleware functions
+            tools: List of tools available to agents
             spinner_manager: Spinner manager instance
         """
-        self.agent_factory = agent_factory
+        self.agent_client = agent_client
+        self.model = model
+        self.middleware = middleware
+        self.tools = tools
         self.spinner_manager = spinner_manager
     
-    async def build_workflow(self, agent_client, threads: dict, prompt: str):
+    async def build_workflow(self, threads: dict, prompt: str):
         """
         Build complete Magentic workflow with all agents.
         
         Args:
-            agent_client: Azure AI agent client
             threads: Dictionary of thread objects
             prompt: User prompt for facts identifier
             
         Returns:
             Built Magentic workflow
         """
-        # Create all agents using factory
-        facts_identifier_agent = self.agent_factory.create_agent(
-            FACTS_IDENTIFIER_CONFIG, 
-            threads["facts_identifier"].id, 
-            prompt
+        # Create Facts Identifier agent
+        facts_instructions = """for the user request: {prompt}
+
+Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
+1. Try exact match first (WHERE name = 'value')
+2. If not found, try partial match (WHERE name LIKE '%value%')
+3. If still not found, try similar names
+
+Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
+
+You will justify what tools you are going to use before requesting them."""
+
+        if prompt and "{prompt}" in facts_instructions:
+            facts_instructions = facts_instructions.format(prompt=prompt)
+
+        facts_identifier_agent = self.agent_client.create_agent(
+            model=self.model,
+            name="Facts Identifier",
+            description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
+            instructions=facts_instructions,
+            middleware=self.middleware,
+            tools=self.tools,
+            conversation_id=threads["facts_identifier"].id,
+            temperature=0.1,
+            additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
         )
         
-        sql_builder_agent = self.agent_factory.create_agent(
-            SQL_BUILDER_CONFIG, 
-            threads["sql_builder"].id
+        # Create SQL Builder agent
+        sql_builder_agent = self.agent_client.create_agent(
+            model=self.model,
+            name="SQL Builder",
+            description="Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ....",
+            instructions="""You construct SQL queries per user request. You always use MCP Tools to validate your query and never generate anything on your own.
+You will justify what tools you are going to use before requesting them.
+OUTPUT FORMAT:
+** SQL Query **
+```sql
+{sql_query}
+```
+** Data Sample **
+```
+{real_data_sample}
+```
+** Feedback **
+```
+{your assumptions, validation notes, or questions}
+```
+""",
+            middleware=self.middleware,
+            tools=self.tools,
+            conversation_id=threads["sql_builder"].id,
+            temperature=0.1,
+            additional_instructions="Annotate what you want before using MCP Tools. Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."
+        )
+        sql_builder_agent.user = "sql_builder"
+        
+        # Create Data Extractor agent
+        data_extractor_agent = self.agent_client.create_agent(
+            model=self.model,
+            name="Data Extractor",
+            description="Use this tool when SQL query is validated and succeeded to extract data.",
+            instructions="""Execute SQL queries using MCP tools and return formatted results.
+
+OUTPUT FORMAT:
+Present data in tables or structured format.""",
+            middleware=self.middleware,
+            tools=self.tools,
+            conversation_id=threads["data_extractor"].id,
+            temperature=0.1,
+            additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
-        data_extractor_agent = self.agent_factory.create_agent(
-            DATA_EXTRACTOR_CONFIG, 
-            threads["data_extractor"].id
-        )
-        
-        # Glossary agent needs custom instructions from secrets
-        glossary_agent = self.agent_factory.create_agent(
-            GLOSSARY_CONFIG, 
-            threads["glossary"].id,
-            custom_instructions=st.secrets["glossary"]["instructions"]
+        # Create Glossary agent with custom instructions from secrets
+        glossary_agent = self.agent_client.create_agent(
+            model=self.model,
+            name="Glossary",
+            description="Business terminology and definitions reference",
+            instructions=st.secrets["glossary"]["instructions"],
+            middleware=self.middleware,
+            tools=self.tools,
+            conversation_id=threads["glossary"].id,
+            temperature=0.1,
+            additional_instructions="Answer concisely and clearly. Focus on practical business context."
         )
 
         logger.info(f"Created agent {sql_builder_agent}")
@@ -87,7 +151,7 @@ class WorkflowBuilder:
                 mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(
-                chat_client=agent_client,
+                chat_client=self.agent_client,
                 instructions=ORCHESTRATOR_INSTRUCTIONS,
                 max_round_count=15,
                 max_stall_count=4,
