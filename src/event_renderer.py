@@ -47,32 +47,56 @@ def parse_tool_output(output: Optional[str]) -> tuple[bool, any]:
         return False, output
 
 
-class SpinnerManager:
-    """Manages spinner state for the application."""
-    
-    @staticmethod
-    def start(text: str):
-        """Start a spinner with the given text."""
-        ctx = st.spinner(text)
-        ctx.__enter__()
-        if 'spinner_ctx' not in st.session_state:
-            st.session_state.spinner_ctx = None
-        st.session_state.spinner_ctx = ctx
-        return ctx
-    
-    @staticmethod
-    def stop():
-        """Stop the current spinner if one exists."""
-        if 'spinner_ctx' in st.session_state and st.session_state.spinner_ctx is not None:
-            try:
-                st.session_state.spinner_ctx.__exit__(None, None, None)
-            except:
-                pass
-            st.session_state.spinner_ctx = None
-
-
 class EventRenderer:
-    """Renders run events to Streamlit UI."""
+    """Renders run events to Streamlit UI - единая точка рендеринга."""
+    
+    # ===== Вспомогательные методы для управления контейнерами =====
+    
+    @staticmethod
+    def create_message_container():
+        """Создать новый контейнер для сообщения"""
+        return st.session_state.current_chat.empty()
+    
+    @staticmethod
+    def reset_message_container():
+        """Сбросить контейнер сообщения"""
+        st.session_state.current_chat = st.empty()
+    
+    @staticmethod
+    def render_agent_text(text: str, agent_id: str):
+        """Отрендерить текст агента и сохранить в историю"""
+        with st.session_state.current_chat:
+            EventRenderer.render(text)
+        st.session_state.messages.append({
+            "role": "🤖",
+            "content": text,
+            "agent_id": agent_id
+        })
+    
+    @staticmethod
+    def render_agent_event(event, agent_id: str):
+        """Отрендерить событие агента и сохранить в историю"""
+        st.session_state.current_chat = st.chat_message("🤖")
+        with st.session_state.current_chat:
+            EventRenderer.render(event)
+        st.session_state.messages.append({
+            "role": "🤖",
+            "event": event,
+            "agent_id": agent_id
+        })
+    
+    @staticmethod
+    def render_orchestrator_event(event):
+        """Отрендерить событие оркестратора и сохранить в историю"""
+        with st.chat_message("assistant"):
+            EventRenderer.render(event)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "event": event,
+                "agent_id": None
+            })
+    
+    # ===== Основной метод рендеринга =====
     
     @staticmethod
     def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):

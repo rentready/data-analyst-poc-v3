@@ -1,14 +1,18 @@
-"""Event handlers for decoupling middleware from UI rendering."""
+"""Event handlers for decoupling middleware from UI rendering.
+
+Принцип разделения:
+- StreamlitEventHandler - обрабатывает события и управляет состоянием
+- EventRenderer - отвечает за рендеринг UI
+"""
 
 import logging
 from typing import Any
-import streamlit as st
 
 logger = logging.getLogger(__name__)
 
 
 class StreamlitEventHandler:
-    """Обработчик событий для Streamlit UI - использует существующие события из библиотек"""
+    """Обработчик событий - управляет состоянием и делегирует рендеринг в EventRenderer"""
     
     def __init__(self, streaming_state, spinner_manager):
         self.streaming_state = streaming_state
@@ -18,48 +22,31 @@ class StreamlitEventHandler:
         """Обработка RunStep событий (Azure AI)"""
         try:
             from azure.ai.agents.models import RunStepType, RunStepStatus
+            from src.event_renderer import EventRenderer
             
             if event.type == RunStepType.MESSAGE_CREATION:
                 if event.status == RunStepStatus.IN_PROGRESS:
                     if not self.streaming_state.is_streaming(event.agent_id):
-                        container = st.session_state.current_chat.empty()
+                        # Создаем контейнер и начинаем стриминг
+                        container = EventRenderer.create_message_container()
                         self.streaming_state.start_streaming(event.agent_id, container)
-                        logger.info(f"Stopping spinner for agent {event.agent_id}")
                         self.spinner_manager.stop()
                 
                 elif event.status == RunStepStatus.COMPLETED:
                     if self.streaming_state.is_streaming(event.agent_id):
                         final_text = self.streaming_state.end_streaming(event.agent_id)
-                        if final_text != "":
-                            from src.event_renderer import EventRenderer
-                            with st.session_state.current_chat:
-                                EventRenderer.render(final_text)
-                            
-                            # Save to session state
-                            st.session_state.messages.append({
-                                "role": "🤖", 
-                                "content": final_text, 
-                                "agent_id": event.agent_id
-                            })
+                        if final_text:
+                            EventRenderer.render_agent_text(final_text, event.agent_id)
                 return
             
             if event.type == RunStepType.TOOL_CALLS:
                 if (hasattr(event, 'step_details') and 
                     hasattr(event.step_details, 'tool_calls') and 
                     event.step_details.tool_calls):
-                    
-                    from src.event_renderer import EventRenderer
-                    with st.session_state.current_chat:
-                        EventRenderer.render(event)
-                    st.session_state.messages.append({
-                        "role": "🤖", 
-                        "event": event, 
-                        "agent_id": event.agent_id
-                    })
+                    EventRenderer.render_agent_event(event, event.agent_id)
                     self.spinner_manager.stop()
                 else:
-                    with st.session_state.current_chat:
-                        self.spinner_manager.start("Running tool...")
+                    self.spinner_manager.start("Running tool...")
         
         except Exception as e:
             logger.error(f"Error handling RunStep event: {e}")
@@ -68,24 +55,16 @@ class StreamlitEventHandler:
         """Обработка ThreadRun событий (Azure AI)"""
         try:
             from azure.ai.agents.models import RunStatus
+            from src.event_renderer import EventRenderer
             
             if event.status == RunStatus.QUEUED:
                 pass
             elif event.status == RunStatus.COMPLETED:
-                st.session_state.current_chat = st.empty()
+                EventRenderer.reset_message_container()
                 self.spinner_manager.start("Planning next steps...")
             else:
-                from src.event_renderer import EventRenderer
-                
-                st.session_state.current_chat = st.chat_message("🤖")
-                st.session_state.messages.append({
-                    "role": "🤖", 
-                    "event": event, 
-                    "agent_id": event.agent_id
-                })
-                with st.session_state.current_chat:
-                    EventRenderer.render(event)
-                    self.spinner_manager.start("Processing...")
+                EventRenderer.render_agent_event(event, event.agent_id)
+                self.spinner_manager.start("Processing...")
         
         except Exception as e:
             logger.error(f"Error handling ThreadRun event: {e}")
@@ -110,16 +89,14 @@ class StreamlitEventHandler:
     async def handle_orchestrator_message(self, event: Any) -> None:
         """Обработка MagenticOrchestratorMessageEvent событий"""
         try:
+            from src.event_renderer import EventRenderer
+            
             if event.kind == "user_task":
                 self.spinner_manager.start("Analyzing your request...")
                 return
             
-            # Render through EventRenderer
-            from src.event_renderer import EventRenderer
-            with st.chat_message("assistant"):
-                EventRenderer.render(event)
-                self.spinner_manager.start("Delegating to assistants...")
-                st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+            EventRenderer.render_orchestrator_event(event)
+            self.spinner_manager.start("Delegating to assistants...")
         
         except Exception as e:
             logger.error(f"Error handling OrchestratorMessage: {e}")
@@ -129,9 +106,7 @@ class StreamlitEventHandler:
         try:
             if event.message is not None:
                 from src.event_renderer import EventRenderer
-                with st.chat_message("assistant"):
-                    EventRenderer.render(event)
-                    st.session_state.messages.append({"role": "assistant", "event": event, "agent_id": None})
+                EventRenderer.render_orchestrator_event(event)
         
         except Exception as e:
             logger.error(f"Error handling FinalResult: {e}")
