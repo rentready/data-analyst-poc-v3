@@ -153,3 +153,18 @@ def get_app_config() -> Dict[str, any]:
             APP_TEMPERATURE_KEY: 0.1
         }
 
+
+def get_vector_store_id() -> Optional[str]:
+    """Get Vector Store ID from Streamlit secrets.
+    
+    Returns:
+        Vector Store ID string or None if not configured.
+    """
+    try:
+        if 'vector_store_id' in st.secrets:
+            vector_store_id = st.secrets['vector_store_id']
+            if isinstance(vector_store_id, str):
+                return vector_store_id.strip()
+        return None
+    except Exception as e:
+        return None

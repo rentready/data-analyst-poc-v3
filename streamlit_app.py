@@ -4,7 +4,7 @@ from tracemalloc import stop
 import streamlit as st
 import logging
 import asyncio
-from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config
+from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config, get_vector_store_id
 from src.constants import PROJ_ENDPOINT_KEY, MCP_SERVER_URL_KEY, MODEL_DEPLOYMENT_NAME_KEY, OPENAI_API_KEY, OPENAI_MODEL_KEY, OPENAI_BASE_URL_KEY, MCP_ALLOWED_TOOLS_KEY
 from src.mcp_client import get_mcp_token_sync, display_mcp_status
 from src.auth import initialize_msal_auth, get_user_initials
@@ -28,6 +28,8 @@ from src.agent_instructions import (
     DATA_EXTRACTOR_DESCRIPTION,
     GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
     GLOSSARY_AGENT_DESCRIPTION,
+    KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
+    KNOWLEDGE_BASE_AGENT_DESCRIPTION,
     ORCHESTRATOR_INSTRUCTIONS
 )
 from agent_framework import (
@@ -48,6 +50,7 @@ from agent_framework import (
 from typing import Callable, Awaitable, AsyncIterable
 
 from src.run_step_tool_call_middleware import run_step_tool_calls_middleware
+from src.knowledge_base_ui import render_knowledge_base_sidebar
 
 from src.event_renderer import EventRenderer, SpinnerManager
 
@@ -183,6 +186,10 @@ def main():
     initialize_app()
 
     config = get_config()
+
+    # Knowledge Base Management in Sidebar
+    vector_store_id = get_vector_store_id()
+    render_knowledge_base_sidebar(vector_store_id, config)
     
     # Get OpenAI configuration
     openai_config = get_openai_config()
@@ -224,6 +231,7 @@ def main():
             sql_builder_thread = await project_client.agents.threads.create() if st.session_state.get("sql_builder_thread", None) is None else st.session_state.sql_builder_thread
             data_extractor_thread = await project_client.agents.threads.create() if st.session_state.get("data_extractor_thread", None) is None else st.session_state.data_extractor_thread
             glossary_thread = await project_client.agents.threads.create() if st.session_state.get("glossary_thread", None) is None else st.session_state.glossary_thread
+            knowledge_base_thread = await project_client.agents.threads.create() if st.session_state.get("knowledge_base_thread", None) is None else st.session_state.knowledge_base_thread
             orchestrator_thread = await project_client.agents.threads.create() if st.session_state.get("orchestrator_thread", None) is None else st.session_state.orchestrator_thread
 
             
@@ -300,20 +308,46 @@ def main():
                     additional_instructions=GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS,
                 )
 
+                # Knowledge Base Agent with File Search
+                vector_store_id = get_vector_store_id()
+                knowledge_base_agent = None
+                if vector_store_id:
+                    knowledge_base_agent = agent_client.create_agent(
+                        model=config[MODEL_DEPLOYMENT_NAME_KEY],
+                        name="Knowledge Base Agent",
+                        description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
+                        instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
+                        tools=[{"type": "file_search"}],
+                        tool_resources={"file_search": {"vector_store_ids": [vector_store_id]}},
+                        conversation_id=knowledge_base_thread.id,
+                        temperature=0.0,
+                    )
+                    logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
+                else:
+                    logger.warning("⚠️ Knowledge Base Agent not created - vector_store_id not configured")
+
                 st.session_state.facts_identifier_thread = facts_identifier_thread
                 st.session_state.sql_builder_thread = sql_builder_thread
                 st.session_state.data_extractor_thread = data_extractor_thread
                 st.session_state.glossary_thread = glossary_thread
+                st.session_state.knowledge_base_thread = knowledge_base_thread
                 st.session_state.orchestrator_thread = orchestrator_thread
 
+                # Build participants dict
+                participants = {
+                    "glossary": glossary_agent,
+                    "facts_identifier": facts_identifier_agent,
+                    "sql_builder": sql_builder_agent,
+                    "data_extractor": data_extractor_agent
+                }
+                
+                # Add knowledge_base agent if available
+                if knowledge_base_agent:
+                    participants["knowledge_base"] = knowledge_base_agent
+                
                 workflow = (
                     MagenticBuilder()
-                    .participants(
-                        glossary = glossary_agent,
-                        facts_identifier = facts_identifier_agent,
-                        sql_builder = sql_builder_agent,
-                        data_extractor = data_extractor_agent
-                    )
+                    .participants(**participants)
                     .on_event(on_orchestrator_event, mode=MagenticCallbackMode.STREAMING)
                     .with_standard_manager(
                         chat_client=agent_client,
