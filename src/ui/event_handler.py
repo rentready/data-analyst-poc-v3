@@ -17,14 +17,14 @@ class StreamlitEventHandler:
     def __init__(self, streaming_state, spinner_manager):
         self.streaming_state = streaming_state
         self.spinner_manager = spinner_manager
-        from src.event_renderer import EventRenderer
+        from src.ui.event_renderer import EventRenderer
         self.event_renderer = EventRenderer()
     
     async def handle_runstep(self, event: Any) -> None:
         """Обработка RunStep событий (Azure AI)"""
         try:
             from azure.ai.agents.models import RunStepType, RunStepStatus
-            from src.event_renderer import EventRenderer
+            from src.ui.event_renderer import EventRenderer
             
             if event.type == RunStepType.MESSAGE_CREATION:
                 if event.status == RunStepStatus.IN_PROGRESS:
@@ -57,7 +57,7 @@ class StreamlitEventHandler:
         """Обработка ThreadRun событий (Azure AI)"""
         try:
             from azure.ai.agents.models import RunStatus
-            from src.event_renderer import EventRenderer
+            from src.ui.event_renderer import EventRenderer
             
             if event.status == RunStatus.QUEUED:
                 pass
@@ -85,7 +85,7 @@ class StreamlitEventHandler:
                 accumulated_text = self.streaming_state.get_accumulated_text(event.agent_id)
                 container = self.streaming_state.get_container(event.agent_id)
                 if container:
-                    from src.event_renderer import EventRenderer
+                    from src.ui.event_renderer import EventRenderer
                     self.event_renderer.render_streaming_text(container, accumulated_text)
         
         except Exception as e:
@@ -94,7 +94,7 @@ class StreamlitEventHandler:
     async def handle_orchestrator_message(self, event: Any) -> None:
         """Обработка MagenticOrchestratorMessageEvent событий"""
         try:
-            from src.event_renderer import EventRenderer
+            from src.ui.event_renderer import EventRenderer
             
             if event.kind == "user_task":
                 self.spinner_manager.start("Analyzing your request...")
@@ -110,7 +110,7 @@ class StreamlitEventHandler:
         """Обработка MagenticFinalResultEvent событий"""
         try:
             if event.message is not None:
-                from src.event_renderer import EventRenderer
+                from src.ui.event_renderer import EventRenderer
                 self.event_renderer.render_orchestrator_event(event)
         
         except Exception as e:

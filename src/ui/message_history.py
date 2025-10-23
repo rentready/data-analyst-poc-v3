@@ -1,7 +1,7 @@
 """Message history rendering for chat interface."""
 
 import streamlit as st
-from src.event_renderer import EventRenderer
+from src.ui.event_renderer import EventRenderer
 
 def render_chat_history():
     """Render the chat message history."""

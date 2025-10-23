@@ -39,7 +39,8 @@ async def agent_events_middleware(
                         
                         if hasattr(event, '__class__'):
                             event_class = event.__class__.__name__
-                            logging.info(f"📦 Event type: {event_class}")
+                            if event_class != 'MessageDeltaChunk':
+                                logging.info(f"📦 Event type: {event_class}")
                             
                             # Делегируем обработку в handler
                             if event_class == 'RunStep':

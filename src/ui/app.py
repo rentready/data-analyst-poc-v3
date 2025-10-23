@@ -15,7 +15,7 @@ from src.workflow.builder import WorkflowBuilder
 from src.middleware.streaming_state import StreamingStateManager
 from src.middleware.spinner_manager import SpinnerManager
 from src.ui.message_history import render_chat_history
-from src.events import create_streamlit_event_handler
+from src.ui.event_handler import create_streamlit_event_handler
 
 from agent_framework import HostedMCPTool
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
