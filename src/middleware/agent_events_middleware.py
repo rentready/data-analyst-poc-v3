@@ -6,27 +6,18 @@ from typing import Any
 import streamlit as st
 import logging
 
-# Импорты для работы с событиями
-from src.event_renderer import EventRenderer
-from src.middleware.spinner_manager import SpinnerManager
-from src.middleware.streaming_state import StreamingStateManager
-
 async def agent_events_middleware(
     context: AgentRunContext, 
     next: Callable[[AgentRunContext], Awaitable[None]],
-    streaming_state: StreamingStateManager,
-    spinner_manager: SpinnerManager,
-    on_tool_calls: Callable = None
+    event_handler
 ) -> None:
     """
-    Middleware that intercepts agent-level events for real-time rendering.
+    Middleware that intercepts agent-level events and delegates to event handler.
     
     Args:
         context: Agent run context
         next: Next middleware in chain
-        streaming_state: Streaming state manager
-        spinner_manager: Spinner manager
-        on_tool_calls: Optional callback for tool calls
+        event_handler: Event handler instance
     """
     agent_id = getattr(context.agent, 'id', None)
     
@@ -37,9 +28,9 @@ async def agent_events_middleware(
     if context.result is not None and context.is_streaming:
         original_stream = context.result
         
-        async def tool_calls_wrapper() -> AsyncIterable[AgentRunResponseUpdate]:
+        async def event_processor() -> AsyncIterable[AgentRunResponseUpdate]:
             async for chunk in original_stream:
-                # Обрабатываем все типы событий
+                # Обрабатываем события через handler
                 if chunk.raw_representation:
                     chat_update = chunk.raw_representation
                     
@@ -50,117 +41,34 @@ async def agent_events_middleware(
                             event_class = event.__class__.__name__
                             logging.info(f"📦 Event type: {event_class}")
                             
-                            # Обрабатываем RunStep события
+                            # Делегируем обработку в handler
                             if event_class == 'RunStep':
-                                await handle_runstep_event(agent_id, event, streaming_state, spinner_manager, on_tool_calls)
-                            
-                            # Обрабатываем ThreadRun события
+                                # Добавляем agent_id к событию (если это объект)
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
+                                await event_handler.handle_runstep(event)
                             elif event_class == 'ThreadRun':
                                 # Safely add agent_name to metadata
-                                event.agent_name = getattr(context.agent, 'name', None) # just a hack
-                                await handle_threadrun_event(agent_id, event, spinner_manager)
-                            
-                            # Обрабатываем MessageDeltaChunk события
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
+                                    event.agent_name = getattr(context.agent, 'name', None)
+                                await event_handler.handle_threadrun(event)
                             elif event_class == 'MessageDeltaChunk':
-                                await handle_message_delta_chunk(agent_id, event, streaming_state)
-                            
-                            # Обрабатываем ThreadMessage события
+                                # Добавляем agent_id к событию (если это объект)
+                                if hasattr(event, '__dict__'):
+                                    event.agent_id = agent_id
+                                await event_handler.handle_message_delta(event)
                             elif event_class == 'ThreadMessage':
-                                await handle_thread_message(agent_id, event)
+                                # ThreadMessage events are usually just passed through
+                                pass
+                            elif event_class == 'str':
+                                # Игнорируем строковые события
+                                logging.debug(f"Ignoring string event: {event}")
+                                pass
+                            else:
+                                logging.warning(f"Unknown event class: {event_class}")
+                                pass
                 
                 yield chunk
         
-        context.result = tool_calls_wrapper()
-
-async def handle_runstep_event(agent_id: str, event, streaming_state: StreamingStateManager, spinner_manager: SpinnerManager, on_tool_calls: Callable = None):
-    """Handle RunStep events with streaming state manager."""
-    try:
-        from azure.ai.agents.models import RunStepType, RunStepStatus
-        
-        # Handle MESSAGE_CREATION
-        if event.type == RunStepType.MESSAGE_CREATION:
-            # IN_PROGRESS - create container for streaming
-            if event.status == RunStepStatus.IN_PROGRESS:
-                if not streaming_state.is_streaming(agent_id):
-                    container = st.session_state.current_chat.empty()
-                    streaming_state.start_streaming(agent_id, container)
-                    logging.info(f"Stopping spinner for agent {agent_id}")
-                    spinner_manager.stop()
-            
-            # COMPLETED - remove container, display through renderer
-            elif event.status == RunStepStatus.COMPLETED:
-                if streaming_state.is_streaming(agent_id):
-                    final_text = streaming_state.end_streaming(agent_id)
-                    if final_text != "":
-                        with st.session_state.current_chat:
-                            EventRenderer.render(final_text)
-                        
-                        # Save only text content for session persistence
-                        st.session_state.messages.append({"role": "🤖", "content": final_text, "agent_id": agent_id})
-            return
-
-        # Handle TOOL_CALLS
-        if event.type == RunStepType.TOOL_CALLS:
-            if (hasattr(event, 'step_details') and 
-                hasattr(event.step_details, 'tool_calls') and 
-                event.step_details.tool_calls):
-
-                with st.session_state.current_chat:
-                    EventRenderer.render(event)
-                st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-                spinner_manager.stop()
-                
-                # Вызываем callback если он передан
-                if on_tool_calls:
-                    on_tool_calls(event, agent_id)
-            else:
-                with st.session_state.current_chat:
-                    spinner_manager.start("Running tool...")
-        
-    except Exception as e:
-        logging.error(f"Error handling RunStep event: {e}")
-
-async def handle_threadrun_event(agent_id: str, event, spinner_manager: SpinnerManager):
-    """Handle ThreadRun events."""
-    try:
-        from azure.ai.agents.models import RunStatus
-        
-        event.agent_id = agent_id
-        if hasattr(event, 'status'):
-            if event.status == RunStatus.QUEUED:
-                pass
-            elif event.status == RunStatus.COMPLETED:
-                st.session_state.current_chat = st.empty()
-                spinner_manager.start("Planning next steps...")
-            else:
-                st.session_state.current_chat = st.chat_message("🤖")
-                st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-                with st.session_state.current_chat:
-                    EventRenderer.render(event)
-                    spinner_manager.start("Processing...")
-    except Exception as e:
-        logging.error(f"Error handling ThreadRun event: {e}")
-
-async def handle_message_delta_chunk(agent_id: str, event, streaming_state: StreamingStateManager):
-    """Handle MessageDeltaChunk events with streaming state manager."""
-    try:
-        if streaming_state.is_streaming(agent_id):
-            # Extract text from delta
-            if hasattr(event, 'delta') and hasattr(event.delta, 'content'):
-                for content in event.delta.content:
-                    if hasattr(content, 'text') and hasattr(content.text, 'value'):
-                        streaming_state.append_text(agent_id, content.text.value)
-            
-            # Update container with accumulated text
-            accumulated_text = streaming_state.get_accumulated_text(agent_id)
-            streaming_state.update_container(agent_id, accumulated_text)
-    except Exception as e:
-        logging.error(f"Error handling MessageDeltaChunk: {e}")
-
-async def handle_thread_message(agent_id: str, event):
-    """Handle ThreadMessage events."""
-    try:
-        # ThreadMessage events are usually just passed through
-        pass
-    except Exception as e:
-        logging.error(f"Error handling ThreadMessage: {e}")
+        context.result = event_processor()

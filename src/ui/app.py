@@ -16,6 +16,7 @@ from src.middleware.streaming_state import StreamingStateManager
 from src.middleware.spinner_manager import SpinnerManager
 from src.ui.message_history import render_chat_history
 from src.knowledge_base_ui import render_knowledge_base_sidebar
+from src.events import create_streamlit_event_handler
 
 from agent_framework import HostedMCPTool
 from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
@@ -156,14 +157,18 @@ class DataAnalystApp:
             async with (
                 AzureAIAgentClient(project_client=project_client, model_deployment_name=self.config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = threads["orchestrator"].id) as agent_client
             ):
+                # Create event handler (один раз для всех)
+                event_handler = create_streamlit_event_handler(self.streaming_state, self.spinner_manager)
+                
                 # Create workflow builder
                 workflow_builder = WorkflowBuilder(
                     agent_client=agent_client,
                     project_client=project_client,
                     model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
-                    middleware=[self._create_tool_calls_middleware()],
+                    middleware=[self._create_tool_calls_middleware(event_handler)],
                     tools=[mcp_tool_with_approval, self.get_time],
-                    spinner_manager=self.spinner_manager
+                    spinner_manager=self.spinner_manager,
+                    event_handler=event_handler
                 )
                 
                 # Build workflow with all agents
@@ -173,33 +178,15 @@ class DataAnalystApp:
 
                 self.spinner_manager.stop()
     
-    def _create_tool_calls_middleware(self):
-        """Create tool calls middleware with current state managers."""
+    def _create_tool_calls_middleware(self, event_handler):
+        """Create tool calls middleware with provided event handler."""
         from agent_framework import agent_middleware
         from src.middleware.agent_events_middleware import agent_events_middleware
-        
-        def my_tool_calls_handler(event, agent_id):
-            """Handle tool calls event."""
-            from azure.ai.agents.models import RunStepType
-            
-            if event.type == RunStepType.TOOL_CALLS:
-                pass
-                # Your code
-                #with st.session_state.current_chat:
-                #    EventRenderer.render(event)
-                #st.session_state.messages.append({"role": "🤖", "event": event, "agent_id": agent_id})
-                #self.spinner_manager.stop()
 
         @agent_middleware
         async def tool_calls_middleware(context, next):
-            """Middleware that handles tool calls events."""
-            return await agent_events_middleware(
-                context, 
-                next, 
-                self.streaming_state, 
-                self.spinner_manager, 
-                on_tool_calls=my_tool_calls_handler
-            )
+            """Middleware that handles tool calls events via event handler."""
+            return await agent_events_middleware(context, next, event_handler)
         
         return tool_calls_middleware
     
