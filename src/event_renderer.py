@@ -96,6 +96,11 @@ class EventRenderer:
                 "agent_id": None
             })
     
+    @staticmethod
+    def render_streaming_text(container, text: str):
+        """Отрендерить потоковый текст в контейнер"""
+        container.write(text)
+    
     # ===== Основной метод рендеринга =====
     
     @staticmethod

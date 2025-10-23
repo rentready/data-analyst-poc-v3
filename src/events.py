@@ -79,9 +79,12 @@ class StreamlitEventHandler:
                         if hasattr(content, 'text') and hasattr(content.text, 'value'):
                             self.streaming_state.append_text(event.agent_id, content.text.value)
                 
-                # Update container with accumulated text
+                # Update container with accumulated text through EventRenderer
                 accumulated_text = self.streaming_state.get_accumulated_text(event.agent_id)
-                self.streaming_state.update_container(event.agent_id, accumulated_text)
+                container = self.streaming_state.get_container(event.agent_id)
+                if container:
+                    from src.event_renderer import EventRenderer
+                    EventRenderer.render_streaming_text(container, accumulated_text)
         
         except Exception as e:
             logger.error(f"Error handling MessageDelta: {e}")
