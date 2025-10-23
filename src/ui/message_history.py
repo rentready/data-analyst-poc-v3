@@ -10,7 +10,18 @@ def render_chat_history():
     prev_role = None
     
     for item in st.session_state.messages:
-        if (prev_agent_id != item["agent_id"] or prev_role != item["role"]):
+        # Only merge messages for agents (agent_id is not None), not for orchestrator (agent_id is None)
+        should_create_new_chat = False
+        
+        if item["agent_id"] is not None:
+            # For agents: merge if same agent_id and role
+            if (prev_agent_id != item["agent_id"] or prev_role != item["role"]):
+                should_create_new_chat = True
+        else:
+            # For orchestrator: always create new chat message (never merge)
+            should_create_new_chat = True
+        
+        if should_create_new_chat:
             prev_role = item["role"]
             prev_agent_id = item["agent_id"]
             current_chat = st.chat_message(item["role"])
