@@ -34,19 +34,19 @@ async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> 
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, agent_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
+    def __init__(self, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
         """
         Initialize workflow builder.
         
         Args:
-            agent_client: Azure AI agent client
+            project_client: Azure AI Project client
             model: Model deployment name
             middleware: List of middleware functions
             tools: List of tools available to agents
             spinner_manager: Spinner manager instance
             event_handler: Unified event handler instance
         """
-        self.agent_client = agent_client
+        self.project_client = project_client
         self.model = model
         self.middleware = middleware
         self.tools = tools
@@ -64,6 +64,14 @@ class WorkflowBuilder:
         Returns:
             Built Magentic workflow
         """
+        # Create agent client for orchestrator
+        from agent_framework.azure import AzureAIAgentClient
+        
+        agent_client = AzureAIAgentClient(
+            project_client=self.project_client, 
+            model_deployment_name=self.model, 
+            thread_id=threads["orchestrator"].id
+        )
         # Create Facts Identifier agent
         facts_instructions = """for the user request: {prompt}
 
@@ -79,7 +87,7 @@ You will justify what tools you are going to use before requesting them."""
         if prompt and "{prompt}" in facts_instructions:
             facts_instructions = facts_instructions.format(prompt=prompt)
 
-        facts_identifier_agent = self.agent_client.create_agent(
+        facts_identifier_agent = agent_client.create_agent(
             model=self.model,
             name="Facts Identifier",
             description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
@@ -92,7 +100,7 @@ You will justify what tools you are going to use before requesting them."""
         )
         
         # Create SQL Builder agent
-        sql_builder_agent = self.agent_client.create_agent(
+        sql_builder_agent = agent_client.create_agent(
             model=self.model,
             name="SQL Builder",
             description="Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ....",
@@ -121,7 +129,7 @@ OUTPUT FORMAT:
         sql_builder_agent.user = "sql_builder"
         
         # Create Data Extractor agent
-        data_extractor_agent = self.agent_client.create_agent(
+        data_extractor_agent = agent_client.create_agent(
             model=self.model,
             name="Data Extractor",
             description="Use this tool when SQL query is validated and succeeded to extract data.",
@@ -137,7 +145,7 @@ Present data in tables or structured format.""",
         )
         
         # Create Glossary agent with custom instructions from secrets
-        glossary_agent = self.agent_client.create_agent(
+        glossary_agent = agent_client.create_agent(
             model=self.model,
             name="Glossary",
             description="Business terminology and definitions reference",
@@ -172,7 +180,7 @@ Present data in tables or structured format.""",
                 mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(
-                chat_client=self.agent_client,
+                chat_client=agent_client,
                 instructions=ORCHESTRATOR_INSTRUCTIONS,
                 max_round_count=15,
                 max_stall_count=4,

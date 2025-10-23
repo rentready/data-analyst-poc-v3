@@ -147,29 +147,25 @@ class DataAnalystApp:
             agent_names = ["facts_identifier", "sql_builder", "data_extractor", "glossary", "orchestrator"]
             threads = await thread_manager.get_all_threads(agent_names)
             
-            # Create separate clients for each agent
-            async with (
-                AzureAIAgentClient(project_client=project_client, model_deployment_name=self.config[MODEL_DEPLOYMENT_NAME_KEY], thread_id = threads["orchestrator"].id) as agent_client
-            ):
-                # Create event handler (один раз для всех)
-                event_handler = create_streamlit_event_handler(self.streaming_state, self.spinner_manager)
-                
-                # Create workflow builder
-                workflow_builder = WorkflowBuilder(
-                    agent_client=agent_client,
-                    model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
-                    middleware=[self._create_tool_calls_middleware(event_handler)],
-                    tools=[mcp_tool_with_approval, self.get_time],
-                    spinner_manager=self.spinner_manager,
-                    event_handler=event_handler
-                )
-                
-                # Build workflow with all agents
-                workflow = await workflow_builder.build_workflow(threads, prompt)
+            # Create event handler (один раз для всех)
+            event_handler = create_streamlit_event_handler(self.streaming_state, self.spinner_manager)
+            
+            # Create workflow builder
+            workflow_builder = WorkflowBuilder(
+                project_client=project_client,
+                model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
+                middleware=[self._create_tool_calls_middleware(event_handler)],
+                tools=[mcp_tool_with_approval, self.get_time],
+                spinner_manager=self.spinner_manager,
+                event_handler=event_handler
+            )
+            
+            # Build workflow with all agents
+            workflow = await workflow_builder.build_workflow(threads, prompt)
 
-                await workflow.run(prompt)
+            await workflow.run(prompt)
 
-                self.spinner_manager.stop()
+            self.spinner_manager.stop()
     
     def _create_tool_calls_middleware(self, event_handler):
         """Create tool calls middleware with provided event handler."""
