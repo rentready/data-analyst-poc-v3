@@ -96,11 +96,9 @@ STEP 0 (MANDATORY): knowledge_base - ALWAYS START HERE!
   * Relationships between entities
   * Data validation rules
 - Example: If user mentions "прошник", "розовые слоны", "property", "job profile" → ASK knowledge_base FIRST!
-- If knowledge_base returns nothing, proceed to glossary
 
-STEP 1: glossary - Get business term definitions and table/field names (if not found in knowledge_base)
-STEP 2: facts_identifier - Use gathered information to identify tables, fields, row IDs, specific names
-STEP 3: sql_builder <> data_extractor
+STEP 1: facts_identifier - Use knowledge base information to identify tables, fields, row IDs, specific names
+STEP 2: sql_builder <> data_extractor
 
 HANDOFF FORMAT (enforce this for all agents):
 ** SQL Query **
@@ -114,8 +112,7 @@ HANDOFF FORMAT (enforce this for all agents):
 
 Your job:
 - START with knowledge_base for ANY unfamiliar terms (synonyms, slang, domain-specific terms)
-- THEN use glossary for standard business terms and table/field names  
-- THEN use facts_identifier with gathered info to find all facts (row IDs, names, exact values)
+- THEN use facts_identifier with knowledge base info to find all facts (row IDs, names, exact values)
 - PASS all identified facts (tables, fields, IDs, names) where necessary to the agents
 - Once you submit a request to a specialist, remember, it does not know what you already know
 """

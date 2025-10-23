@@ -124,18 +124,7 @@ Present data in tables or structured format.""",
             additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
-        # Create Glossary agent with custom instructions from secrets
-        glossary_agent = self.agent_client.create_agent(
-            model=self.model,
-            name="Glossary",
-            description="Business terminology and definitions reference",
-            instructions=st.secrets["glossary"]["instructions"],
-            middleware=self.middleware,
-            tools=self.tools,
-            conversation_id=threads["glossary"].id,
-            temperature=0.1,
-            additional_instructions="Answer concisely and clearly. Focus on practical business context."
-        )
+        # Glossary agent removed - using Knowledge Base instead
 
         # Create Knowledge Base Agent with File Search
         vector_store_id = get_vector_store_id()
@@ -161,21 +150,22 @@ Present data in tables or structured format.""",
         st.session_state.facts_identifier_thread = threads["facts_identifier"]
         st.session_state.sql_builder_thread = threads["sql_builder"]
         st.session_state.data_extractor_thread = threads["data_extractor"]
-        st.session_state.glossary_thread = threads["glossary"]
         st.session_state.knowledge_base_thread = threads["knowledge_base"]
         st.session_state.orchestrator_thread = threads["orchestrator"]
 
-        # Build participants dict
-        participants = {
-            "glossary": glossary_agent,
+        # Build participants dict - Knowledge Base first for priority
+        participants = {}
+        
+        # Add knowledge_base agent first if available
+        if knowledge_base_agent:
+            participants["knowledge_base"] = knowledge_base_agent
+        
+        # Add other agents
+        participants.update({
             "facts_identifier": facts_identifier_agent,
             "sql_builder": sql_builder_agent,
             "data_extractor": data_extractor_agent
-        }
-        
-        # Add knowledge_base agent if available
-        if knowledge_base_agent:
-            participants["knowledge_base"] = knowledge_base_agent
+        })
         
         # Build workflow
         workflow = (
