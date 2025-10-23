@@ -75,16 +75,13 @@ class EventRenderer:
     """Renders run events to Streamlit UI."""
     
     @staticmethod
-    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun'], auto_start_spinner: str = None):
+    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """
         Render event to UI.
         
         Args:
             event: Event to render
-            auto_start_spinner: If provided, start spinner with this text after rendering
         """
-        # Automatically stop spinner before rendering
-        SpinnerManager.stop()
         
         # Magentic events
         if isinstance(event, MagenticOrchestratorMessageEvent):
@@ -119,9 +116,6 @@ class EventRenderer:
         else:
             logger.warning(f"Unknown event type: {type(event)}")
         
-        # Automatically start spinner after rendering if specified
-        if auto_start_spinner:
-            SpinnerManager.start(auto_start_spinner)
     
     @staticmethod
     def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):
@@ -184,18 +178,18 @@ class EventRenderer:
         # Get status information
         status = run.status if hasattr(run, 'status') else None
         agent_id = run.agent_id if hasattr(run, 'agent_id') else "Unknown Agent"
-        
+        agent_name = run.agent_name if hasattr(run, 'agent_name') else agent_id
         # Render based on status
         if status == RunStatus.IN_PROGRESS or status == "in_progress":
-            st.success(f"**{agent_id}** has started working on the task")
+            st.success(f"**{agent_name}** has started working on the task")
         elif status == RunStatus.QUEUED or status == "queued":
             #st.info(f"⏳ **{agent_id}** is queued and waiting to start")
             pass;
         elif status == RunStatus.COMPLETED or status == "completed":
-            st.success(f"✅ **{agent_id}** has completed the task")
+            st.success(f"✅ **{agent_name}** has completed the task")
         elif status == RunStatus.FAILED or status == "failed":
             error_msg = run.last_error.message if hasattr(run, 'last_error') and run.last_error else "Unknown error"
-            st.error(f"❌ **{agent_id}** failed: {error_msg}")
+            st.error(f"❌ **{agent_name}** failed: {error_msg}")
     
     @staticmethod
     def render_runstep_event(event):
