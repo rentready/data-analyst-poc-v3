@@ -127,6 +127,7 @@ Present data in tables or structured format.""",
         # Glossary agent removed - using Knowledge Base instead
 
         # Create Knowledge Base Agent with File Search
+        # CRITICAL FIX: Remove middleware to allow proper file_search tool usage
         vector_store_id = get_vector_store_id()
         knowledge_base_agent = None
         if vector_store_id:
@@ -135,7 +136,7 @@ Present data in tables or structured format.""",
                 name="Knowledge Base Agent",
                 description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
                 instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
-                middleware=self.middleware,
+                # NO middleware - it interferes with file_search tool
                 tools=[{"type": "file_search"}],
                 tool_resources={"file_search": {"vector_store_ids": [vector_store_id]}},
                 conversation_id=threads["knowledge_base"].id,

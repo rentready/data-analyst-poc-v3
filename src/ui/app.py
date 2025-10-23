@@ -146,8 +146,9 @@ class DataAnalystApp:
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=self.config[PROJ_ENDPOINT_KEY], credential=credential) as project_client,
         ):
-            # Create thread manager
-            thread_manager = ThreadManager(project_client)
+            # Create thread manager with Vector Store ID for Knowledge Base
+            vector_store_id = get_vector_store_id()
+            thread_manager = ThreadManager(project_client, vector_store_id)
             
             # Create threads for all agents
             agent_names = ["facts_identifier", "sql_builder", "data_extractor", "knowledge_base", "orchestrator"]
