@@ -3,16 +3,39 @@
 from agent_framework import (
     MagenticBuilder,
     MagenticCallbackMode,
-    AgentRunContext,
     MagenticCallbackEvent,
     MagenticOrchestratorMessageEvent,
     MagenticFinalResultEvent
 )
-from src.agent_instructions import ORCHESTRATOR_INSTRUCTIONS
 import streamlit as st
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Orchestrator Instructions
+ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
+
+WORKFLOW:
+1. glossary - Get business term definitions and table/field names
+2. facts_identifier - Use glossary info + MCP tools to identify all facts (tables, fields, row IDs, specific names)
+3. sql_builder <> data_extractor
+
+HANDOFF FORMAT (enforce this for all agents):
+** SQL Query **
+```sql
+{sql_query}
+```
+** Feedback **
+```
+{feedback}
+```
+
+Your job:
+- START with glossary to get business terms and table/field names
+- THEN use facts_identifier with glossary's info to find all facts (row IDs, names, exact values)
+- PASS all identified facts (tables, fields, IDs, names) where necessary to the agents.
+- Once you submit a request to a specialist, remember, it does not know what you already know.
+"""
 
 
 async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
