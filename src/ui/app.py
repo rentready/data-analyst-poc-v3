@@ -6,8 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.config import get_config, get_mcp_config, setup_environment_variables, get_auth_config, get_openai_config, get_vector_store_id
-from src.credentials import get_mcp_token_sync, initialize_msal_auth, get_user_initials
+from src.credentials import setup_environment_variables, get_mcp_token_sync, initialize_msal_auth, get_user_initials
 from src.ui.thread_manager import ThreadManager
 from src.workflow.builder import WorkflowBuilder
 from src.middleware.streaming_state import StreamingStateManager
@@ -112,8 +111,15 @@ class DataAnalystApp:
         
         # Render Knowledge Base sidebar
         with st.sidebar:
-            vector_store_id = get_vector_store_id()
-            render_knowledge_base_sidebar(vector_store_id, self.config)
+            try:
+                vector_store_id = st.secrets.get('vector_store_id')
+                # Create minimal config for knowledge base UI
+                kb_config = {
+                    'proj_endpoint': st.secrets["azure_ai_foundry"]["proj_endpoint"]
+                }
+                render_knowledge_base_sidebar(vector_store_id, kb_config)
+            except Exception as e:
+                st.sidebar.warning(f"Knowledge Base UI unavailable: {e}")
         
         # Render chat history
         render_chat_history()
@@ -166,7 +172,7 @@ class DataAnalystApp:
             AIProjectClient(endpoint=self.azure_endpoint, credential=credential) as project_client,
         ):
             # Create thread manager with Vector Store ID for Knowledge Base
-            vector_store_id = get_vector_store_id()
+            vector_store_id = st.secrets.get('vector_store_id')
             thread_manager = ThreadManager(project_client, vector_store_id)
             
             # Create threads for all agents
