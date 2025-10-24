@@ -202,11 +202,11 @@ Present data in tables or structured format.""",
             additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
-        # Create Glossary agent with custom instructions from secrets
+        # Create file search tool for knowledge base
         vector_store_id = st.secrets['vector_store_id']
-
         file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
-
+        
+        # Create Knowledge Base agent with file search tool
         knowledge_base = agent_client.create_agent(
             model=self.model,
             name="Knowledge Base Agent",

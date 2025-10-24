@@ -50,46 +50,84 @@ def parse_tool_output(output: Optional[str]) -> tuple[bool, any]:
 class EventRenderer:
     """Renders run events to Streamlit UI - единая точка рендеринга."""
     
+    def __init__(self):
+        """Initialize event renderer with chat state tracking."""
+        self._current_agent_id: Optional[str] = None
+        self._current_role: Optional[str] = None
+    
+    def get_or_create_chat_message(self, role: str, agent_id: Optional[str] = None):
+        """
+        Get existing chat message or create new one.
+        
+        Args:
+            role: Role of the message (e.g., "🤖", "assistant", "user")
+            agent_id: Agent ID for agent messages (None for orchestrator)
+            
+        Returns:
+            Chat message container
+        """
+        # For agents: reuse if same agent_id and role
+        # For orchestrator: always create new (agent_id is None)
+        should_create_new = False
+        
+        if agent_id is not None:
+            # For agents: merge if same agent_id and role
+            if (self._current_agent_id != agent_id or self._current_role != role):
+                should_create_new = True
+        else:
+            # For orchestrator: always create new chat message
+            should_create_new = True
+        
+        if should_create_new:
+            self._current_role = role
+            self._current_agent_id = agent_id
+            st.session_state.current_chat = st.chat_message(role)
+        
+        return st.session_state.current_chat
+    
+    def reset(self):
+        """Reset the event renderer state."""
+        self._current_agent_id = None
+        self._current_role = None
+        st.session_state.current_chat = st.empty()
+    
     # ===== Вспомогательные методы для управления контейнерами =====
     
-    @staticmethod
-    def create_message_container():
+    def create_message_container(self):
         """Создать новый контейнер для сообщения"""
         return st.session_state.current_chat.empty()
     
-    @staticmethod
-    def reset_message_container():
+    def reset_message_container(self):
         """Сбросить контейнер сообщения"""
-        st.session_state.current_chat = st.empty()
+        self.reset()
     
-    @staticmethod
-    def render_agent_text(text: str, agent_id: str):
+    def render_agent_text(self, text: str, agent_id: str):
         """Отрендерить текст агента и сохранить в историю"""
-        with st.session_state.current_chat:
-            EventRenderer.render(text)
+        chat_container = self.get_or_create_chat_message("🤖", agent_id)
+        with chat_container:
+            self.render(text)
         st.session_state.messages.append({
             "role": "🤖",
             "content": text,
             "agent_id": agent_id
         })
     
-    @staticmethod
-    def render_agent_event(event, agent_id: str):
+    def render_agent_event(self, event, agent_id: str):
         """Отрендерить событие агента и сохранить в историю"""
-        st.session_state.current_chat = st.chat_message("🤖")
-        with st.session_state.current_chat:
-            EventRenderer.render(event)
+        chat_container = self.get_or_create_chat_message("🤖", agent_id)
+        with chat_container:
+            self.render(event)
         st.session_state.messages.append({
             "role": "🤖",
             "event": event,
             "agent_id": agent_id
         })
     
-    @staticmethod
-    def render_orchestrator_event(event):
+    def render_orchestrator_event(self, event):
         """Отрендерить событие оркестратора и сохранить в историю"""
-        with st.chat_message("assistant"):
-            EventRenderer.render(event)
+        chat_container = self.get_or_create_chat_message("assistant", None)
+        with chat_container:
+            self.render(event)
             st.session_state.messages.append({
                 "role": "assistant",
                 "event": event,
@@ -103,8 +141,7 @@ class EventRenderer:
     
     # ===== Основной метод рендеринга =====
     
-    @staticmethod
-    def render(event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
+    def render(self, event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """
         Render event to UI.
         
@@ -120,34 +157,33 @@ class EventRenderer:
             logger.info(f"{event.message.message_id}")
             logger.info(f"{event.message.additional_properties}")
             logger.info(f"{event.message.raw_representation}")
-            EventRenderer.render_orchestrator_message(event)
+            self.render_orchestrator_message(event)
         
         elif isinstance(event, MagenticAgentDeltaEvent):
-            EventRenderer.render_agent_delta(event)
+            self.render_agent_delta(event)
         
         elif isinstance(event, MagenticAgentMessageEvent):
-            EventRenderer.render_agent_message(event)
+            self.render_agent_message(event)
         
         elif isinstance(event, MagenticFinalResultEvent):
-            EventRenderer.render_final_result(event)
+            self.render_final_result(event)
         
         elif isinstance(event, ExecutorInvokedEvent):
-            EventRenderer.render_executor_invoked(event)
+            self.render_executor_invoked(event)
         
         # Azure AI events (ThreadRun, RunStep, MessageDeltaChunk)
         elif isinstance(event, ThreadRun):
-            EventRenderer.render_thread_run(event)
+            self.render_thread_run(event)
         
         elif isinstance(event, (RunStep, MessageDeltaChunk)):
-            EventRenderer.render_runstep_event(event)
+            self.render_runstep_event(event)
         elif isinstance(event, str):
             st.write(event)
         else:
             logger.warning(f"Unknown event type: {type(event)}")
         
     
-    @staticmethod
-    def render_orchestrator_message(event: MagenticOrchestratorMessageEvent):
+    def render_orchestrator_message(self, event: MagenticOrchestratorMessageEvent):
         """Render orchestrator message."""
         message_text = getattr(event.message, 'text', '')
         
@@ -167,20 +203,17 @@ class EventRenderer:
             st.write(message_text)
             st.write("---")
     
-    @staticmethod
-    def render_agent_delta(event: MagenticAgentDeltaEvent):
+    def render_agent_delta(self, event: MagenticAgentDeltaEvent):
         """Render agent delta (streaming text) - requires container management from caller."""
         # This method is meant to be called from a streaming context
         # where the caller manages the text accumulation and container
         logger.debug(f"Agent delta from {event.agent_id}: {event.text}")
     
-    @staticmethod
-    def render_agent_message(event: MagenticAgentMessageEvent):
+    def render_agent_message(self, event: MagenticAgentMessageEvent):
         """Render complete agent message."""
         st.write(event.message.text)
     
-    @staticmethod
-    def render_agent_final_message(agent_id: str, message_text: str):
+    def render_agent_final_message(self, agent_id: str, message_text: str):
         """Render agent's final message in collapsible format (auxiliary message)."""
         # Define preview (first 100 characters)
         preview = message_text[:100] + "..." if len(message_text) > 100 else message_text
@@ -189,20 +222,17 @@ class EventRenderer:
         with st.expander(f"{preview}", expanded=False):
             st.markdown(message_text)
     
-    @staticmethod
-    def render_final_result(event: MagenticFinalResultEvent):
+    def render_final_result(self, event: MagenticFinalResultEvent):
         """Render final workflow result."""
         st.info("**FINAL RESULT:**")
         if event.message is not None:
             st.markdown(event.message.text)
     
-    @staticmethod
-    def render_executor_invoked(event: ExecutorInvokedEvent):
+    def render_executor_invoked(self, event: ExecutorInvokedEvent):
         """Render executor invoked event."""
         st.write(f"**[Executor Invoked - {event.executor_id}]**")
     
-    @staticmethod
-    def render_thread_run(run: ThreadRun):
+    def render_thread_run(self, run: ThreadRun):
         """Render ThreadRun event - agent taking on work."""
         # Get status information
         status = run.status if hasattr(run, 'status') else None
@@ -220,8 +250,7 @@ class EventRenderer:
             error_msg = run.last_error.message if hasattr(run, 'last_error') and run.last_error else "Unknown error"
             st.error(f"❌ **{agent_name}** failed: {error_msg}")
     
-    @staticmethod
-    def render_runstep_event(event):
+    def render_runstep_event(self, event):
         """Render Azure AI RunStep or MessageDeltaChunk event."""
         try:
             # Handle MessageDeltaChunk (streaming text) - requires caller to manage containers
@@ -231,12 +260,11 @@ class EventRenderer:
             
             # Handle RunStep
             if isinstance(event, RunStep):
-                EventRenderer._render_runstep(event)
+                self._render_runstep(event)
         except ImportError:
             logger.warning("Azure AI models not available for RunStep processing")
     
-    @staticmethod
-    def _render_runstep(run_step):
+    def _render_runstep(self, run_step):
         """Render Azure AI RunStep."""
         try:
             # Skip MESSAGE_CREATION steps (handled separately by streaming)
@@ -257,12 +285,11 @@ class EventRenderer:
                 if hasattr(details, 'tool_calls') and details.tool_calls:
                     # Render each tool call with original design
                     for tc in details.tool_calls:
-                        EventRenderer._render_tool_call_item(tc)
+                        self._render_tool_call_item(tc)
         except ImportError:
             logger.warning("Azure AI models not available")
     
-    @staticmethod
-    def _render_tool_call_item(tool_call):
+    def _render_tool_call_item(self, tool_call):
         """Render a single tool call from Azure AI RunStep with ORIGINAL design."""
         try:
             # Required MCP Tool Call (needs approval) - skip UI rendering here
@@ -308,7 +335,7 @@ class EventRenderer:
                         is_json, parsed = parse_tool_output(tool_call.output)
                         
                         if is_json:
-                            EventRenderer._render_structured_output(parsed)
+                            self._render_structured_output(parsed)
                         else:
                             with st.expander("📤 Output", expanded=True):
                                 st.text(parsed)
@@ -317,8 +344,7 @@ class EventRenderer:
         except ImportError:
             logger.warning("Azure AI models not available")
     
-    @staticmethod
-    def _render_structured_output(result):
+    def _render_structured_output(self, result):
         """Render structured JSON output."""
         # Show success/error status
         if isinstance(result, dict):
@@ -338,8 +364,7 @@ class EventRenderer:
             else:
                 st.markdown(str(result))
     
-    @staticmethod
-    def render_approval_request(tool_calls, 
+    def render_approval_request(self, tool_calls, 
                                on_approve: Callable = None, 
                                on_deny: Callable = None,
                                request_id: str = None):
@@ -372,8 +397,7 @@ class EventRenderer:
         except ImportError:
             logger.warning("Azure AI models not available for approval rendering")
     
-    @staticmethod
-    def render_error(error_message: str, error_code: str = None):
+    def render_error(self, error_message: str, error_code: str = None):
         """Render error event with helpful context."""
         st.error(f"❌ **Error occurred:** {error_message}")
         

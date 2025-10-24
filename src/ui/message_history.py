@@ -1,10 +1,13 @@
 """Message history rendering for chat interface."""
 
 import streamlit as st
-from src.event_renderer import EventRenderer
+from src.ui.event_renderer import EventRenderer
 
 def render_chat_history():
     """Render the chat message history."""
+    # Create EventRenderer instance for rendering
+    event_renderer = EventRenderer()
+    
     current_chat = st.empty()
     prev_agent_id = None
     prev_role = None
@@ -31,4 +34,4 @@ def render_chat_history():
             continue
         
         with current_chat:
-            EventRenderer.render(content)
+            event_renderer.render(content)
