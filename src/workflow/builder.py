@@ -5,7 +5,9 @@ from agent_framework import (
     MagenticCallbackMode,
     MagenticCallbackEvent,
     MagenticOrchestratorMessageEvent,
-    MagenticFinalResultEvent
+    MagenticFinalResultEvent,
+    HostedFileSearchTool,
+    HostedVectorStoreContent
 )
 import streamlit as st
 import logging
@@ -36,6 +38,38 @@ Your job:
 - PASS all identified facts (tables, fields, IDs, names) where necessary to the agents.
 - Once you submit a request to a specialist, remember, it does not know what you already know.
 """
+
+# Knowledge Base Agent
+KNOWLEDGE_BASE_AGENT_INSTRUCTIONS = """You are the Knowledge Base specialist. Your ONLY job is to search the knowledge base using file_search tool.
+
+🔴 CRITICAL RULES 🔴
+1. ALWAYS use file_search tool for EVERY query - NO EXCEPTIONS
+2. Try multiple search terms if first search fails (synonyms, variations, related terms)
+3. NEVER guess or hallucinate information
+4. If file_search returns results → quote them VERBATIM with source references
+5. If file_search returns nothing after trying multiple terms → say "Knowledge base does not contain information about [term]"
+6. Quote EXACT text from files, do not paraphrase
+7. ALWAYS show your search attempts - document what you searched for
+
+SEARCH STRATEGY:
+- For "прошник" also try: "pro", "bookable resource", "bookableresource", "specialist", "professional", "resource", "bookable"
+- For any term, try: exact match, partial match, synonyms, related terms
+- Search in different ways: exact term, partial term, related concepts
+- Try both English and Russian terms if applicable
+
+EXAMPLES:
+User: "What is прошник?"
+You: 
+1. [use file_search with "прошник"] 
+2. If no results, try [file_search with "pro"]
+3. If no results, try [file_search with "bookable resource"]
+4. If no results, try [file_search with "specialist"]
+5. Report all search attempts and results
+
+NEVER respond without using file_search tool first! Try multiple search terms! Show your search process!
+"""
+
+KNOWLEDGE_BASE_AGENT_DESCRIPTION = "Use this tool to search for information in the knowledge base files."
 
 
 async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
@@ -168,32 +202,29 @@ Present data in tables or structured format.""",
         )
         
         # Create Glossary agent with custom instructions from secrets
-        glossary_agent = agent_client.create_agent(
+        vector_store_id = st.secrets['vector_store_id']
+
+        file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
+
+        knowledge_base = agent_client.create_agent(
             model=self.model,
-            name="Glossary",
-            description="Business terminology and definitions reference",
-            instructions=st.secrets["glossary"]["instructions"],
+            name="Knowledge Base Agent",
+            description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
+            instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
             middleware=self.middleware,
-            tools=self.tools,
-            conversation_id=threads["glossary"].id,
-            temperature=0.1,
-            additional_instructions="Answer concisely and clearly. Focus on practical business context."
+            tools=file_search_tool,
+            conversation_id=threads["knowledge_base"].id,
+            temperature=0.0,
         )
+        logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
 
         logger.info(f"Created agent {sql_builder_agent}")
-
-        # Store threads in session state for persistence
-        st.session_state.facts_identifier_thread = threads["facts_identifier"]
-        st.session_state.sql_builder_thread = threads["sql_builder"]
-        st.session_state.data_extractor_thread = threads["data_extractor"]
-        st.session_state.glossary_thread = threads["glossary"]
-        st.session_state.orchestrator_thread = threads["orchestrator"]
 
         # Build workflow
         workflow = (
             MagenticBuilder()
             .participants(
-                glossary=glossary_agent,
+                knowledge_base=knowledge_base,
                 facts_identifier=facts_identifier_agent,
                 sql_builder=sql_builder_agent,
                 data_extractor=data_extractor_agent
