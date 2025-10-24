@@ -162,7 +162,7 @@ class DataAnalystApp:
             thread_manager = ThreadManager(project_client)
             
             # Create threads for all agents
-            agent_names = ["facts_identifier", "sql_builder", "data_extractor", "knowledge_base", "orchestrator"]
+            agent_names = ["facts_identifier", "sql_builder", "data_extractor", "orchestrator"]
             threads = await thread_manager.get_all_threads(agent_names)
             
             # Create event handler (один раз для всех)

@@ -144,13 +144,20 @@ You will justify what tools you are going to use before requesting them."""
         if prompt and "{prompt}" in facts_instructions:
             facts_instructions = facts_instructions.format(prompt=prompt)
 
+        # Create file search tool for facts identifier
+        vector_store_id = st.secrets['vector_store_id']
+        file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
+        
+        # Combine standard tools with file search tool for facts identifier
+        enhanced_facts_tools = self.tools + [file_search_tool]
+        
         facts_identifier_agent = agent_client.create_agent(
             model=self.model,
             name="Facts Identifier",
             description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
             instructions=facts_instructions,
             middleware=self.middleware,
-            tools=self.tools,
+            tools=enhanced_facts_tools,  # Use enhanced tools with file search
             conversation_id=threads["facts_identifier"].id,
             temperature=0.1,
             additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
@@ -201,30 +208,11 @@ Present data in tables or structured format.""",
             additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
-        # Create Glossary agent with custom instructions from secrets
-        vector_store_id = st.secrets['vector_store_id']
-
-        file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
-
-        knowledge_base = agent_client.create_agent(
-            model=self.model,
-            name="Knowledge Base Agent",
-            description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
-            instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
-            middleware=self.middleware,
-            tools=file_search_tool,
-            conversation_id=threads["knowledge_base"].id,
-            temperature=0.0,
-        )
-        logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
-
-        logger.info(f"Created agent {sql_builder_agent}")
 
         # Build workflow
         workflow = (
             MagenticBuilder()
             .participants(
-                knowledge_base=knowledge_base,
                 facts_identifier=facts_identifier_agent,
                 sql_builder=sql_builder_agent,
                 data_extractor=data_extractor_agent
