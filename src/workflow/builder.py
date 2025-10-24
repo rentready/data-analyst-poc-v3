@@ -3,37 +3,107 @@
 from agent_framework import (
     MagenticBuilder,
     MagenticCallbackMode,
-    AgentRunContext
+    MagenticCallbackEvent,
+    MagenticOrchestratorMessageEvent,
+    MagenticFinalResultEvent,
+    HostedFileSearchTool,
+    HostedVectorStoreContent
 )
-from src.agent_instructions import (
-    ORCHESTRATOR_INSTRUCTIONS,
-    KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
-    KNOWLEDGE_BASE_AGENT_DESCRIPTION
-)
-from src.config import get_vector_store_id
-from src.workflow.orchestrator_handler import on_orchestrator_event
 import streamlit as st
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Orchestrator Instructions
+ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
+
+🔴 CRITICAL: MANDATORY WORKFLOW 🔴
+
+STEP 0 (MANDATORY): knowledge_base - ALWAYS START HERE!
+- BEFORE anything else, ask 'knowledge_base' agent to SEARCH for ANY unfamiliar, domain-specific, or slang terms in the request
+- Knowledge Base contains:
+  * Entity mappings (business slang → database tables)  
+  * Synonyms and terminology
+  * Business rules and logic
+  * Relationships between entities
+  * Data validation rules
+- Tell knowledge_base agent: "Please search the knowledge base for information about [term]"
+
+STEP 1: facts_identifier - Use knowledge base information to identify tables, fields, row IDs, specific names
+STEP 2: sql_builder <> data_extractor
+
+HANDOFF FORMAT (enforce this for all agents):
+** SQL Query **
+```sql
+{sql_query}
+```
+** Feedback **
+```
+{feedback}
+```
+
+Your job:
+- START with knowledge_base for ANY unfamiliar terms (synonyms, slang, domain-specific terms)
+- THEN use facts_identifier with knowledge base info to find all facts (row IDs, names, exact values)
+- PASS all identified facts (tables, fields, IDs, names) where necessary to the agents
+- Once you submit a request to a specialist, remember, it does not know what you already know
+"""
+
+# Knowledge Base Agent
+KNOWLEDGE_BASE_AGENT_INSTRUCTIONS = """You are the Knowledge Base specialist. Your ONLY job is to search the knowledge base using file_search tool.
+
+🔴 CRITICAL RULES 🔴
+1. ALWAYS use file_search tool for EVERY query - NO EXCEPTIONS
+2. Try multiple search terms if first search fails (synonyms, variations, related terms)
+3. NEVER guess or hallucinate information
+4. If file_search returns results → quote them VERBATIM with source references
+5. If file_search returns nothing after trying multiple terms → say "Knowledge base does not contain information about [term]"
+6. Quote EXACT text from files, do not paraphrase
+7. ALWAYS show your search attempts - document what you searched for
+
+SEARCH STRATEGY:
+- For any term, try: exact match, partial match, synonyms, related terms
+- Search in different ways: exact term, partial term, related concepts
+- Try both English and Russian terms if applicable
+- Report all search attempts and results
+
+NEVER respond without using file_search tool first! Try multiple search terms! Show your search process!
+"""
+
+KNOWLEDGE_BASE_AGENT_DESCRIPTION = "Use this tool to search for information in the knowledge base files."
+
+
+async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
+    """
+    Handle workflow-level events (orchestrator messages, final results) via unified event handler.
+    
+    Args:
+        event: Magentic callback event
+        event_handler: Unified event handler instance
+    """
+    
+    if isinstance(event, MagenticOrchestratorMessageEvent):
+        await event_handler.handle_orchestrator_message(event)
+    
+    elif isinstance(event, MagenticFinalResultEvent):
+        await event_handler.handle_final_result(event)
+
+
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, agent_client, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
+    def __init__(self, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
         """
         Initialize workflow builder.
         
         Args:
-            agent_client: Azure AI agent client
-            project_client: Azure AI Project client (for file_search tools)
+            project_client: Azure AI Project client
             model: Model deployment name
             middleware: List of middleware functions
             tools: List of tools available to agents
             spinner_manager: Spinner manager instance
             event_handler: Unified event handler instance
         """
-        self.agent_client = agent_client
         self.project_client = project_client
         self.model = model
         self.middleware = middleware
@@ -52,6 +122,14 @@ class WorkflowBuilder:
         Returns:
             Built Magentic workflow
         """
+        # Create agent client for orchestrator
+        from agent_framework.azure import AzureAIAgentClient
+        
+        agent_client = AzureAIAgentClient(
+            project_client=self.project_client, 
+            model_deployment_name=self.model, 
+            thread_id=threads["orchestrator"].id
+        )
         # Create Facts Identifier agent
         facts_instructions = """for the user request: {prompt}
 
@@ -67,10 +145,10 @@ You will justify what tools you are going to use before requesting them."""
         if prompt and "{prompt}" in facts_instructions:
             facts_instructions = facts_instructions.format(prompt=prompt)
 
-        facts_identifier_agent = self.agent_client.create_agent(
+        facts_identifier_agent = agent_client.create_agent(
             model=self.model,
             name="Facts Identifier",
-            description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
+            description="Use MCP Tools to find every entity (IDs, names, values) for the user request using information from knowledge base. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
             instructions=facts_instructions,
             middleware=self.middleware,
             tools=self.tools,
@@ -80,7 +158,7 @@ You will justify what tools you are going to use before requesting them."""
         )
         
         # Create SQL Builder agent
-        sql_builder_agent = self.agent_client.create_agent(
+        sql_builder_agent = agent_client.create_agent(
             model=self.model,
             name="SQL Builder",
             description="Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ....",
@@ -109,7 +187,7 @@ OUTPUT FORMAT:
         sql_builder_agent.user = "sql_builder"
         
         # Create Data Extractor agent
-        data_extractor_agent = self.agent_client.create_agent(
+        data_extractor_agent = agent_client.create_agent(
             model=self.model,
             name="Data Extractor",
             description="Use this tool when SQL query is validated and succeeded to extract data.",
@@ -124,61 +202,40 @@ Present data in tables or structured format.""",
             additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
-        # Glossary agent removed - using Knowledge Base instead
+        # Create Glossary agent with custom instructions from secrets
+        vector_store_id = st.secrets['vector_store_id']
 
-        # Create Knowledge Base Agent with File Search
-        # CRITICAL FIX: Remove middleware to allow proper file_search tool usage
-        vector_store_id = get_vector_store_id()
-        knowledge_base_agent = None
-        if vector_store_id:
-            knowledge_base_agent = self.agent_client.create_agent(
-                model=self.model,
-                name="Knowledge Base Agent",
-                description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
-                instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
-                # NO middleware - it interferes with file_search tool
-                tools=[{"type": "file_search"}],
-                tool_resources={"file_search": {"vector_store_ids": [vector_store_id]}},
-                conversation_id=threads["knowledge_base"].id,
-                temperature=0.0,
-            )
-            logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
-        else:
-            logger.warning("⚠️ Knowledge Base Agent not created - vector_store_id not configured")
+        file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
+
+        knowledge_base = agent_client.create_agent(
+            model=self.model,
+            name="Knowledge Base Agent",
+            description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
+            instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
+            middleware=self.middleware,
+            tools=file_search_tool,
+            conversation_id=threads["knowledge_base"].id,
+            temperature=0.0,
+        )
+        logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
 
         logger.info(f"Created agent {sql_builder_agent}")
 
-        # Store threads in session state for persistence
-        st.session_state.facts_identifier_thread = threads["facts_identifier"]
-        st.session_state.sql_builder_thread = threads["sql_builder"]
-        st.session_state.data_extractor_thread = threads["data_extractor"]
-        st.session_state.knowledge_base_thread = threads["knowledge_base"]
-        st.session_state.orchestrator_thread = threads["orchestrator"]
-
-        # Build participants dict - Knowledge Base first for priority
-        participants = {}
-        
-        # Add knowledge_base agent first if available
-        if knowledge_base_agent:
-            participants["knowledge_base"] = knowledge_base_agent
-        
-        # Add other agents
-        participants.update({
-            "facts_identifier": facts_identifier_agent,
-            "sql_builder": sql_builder_agent,
-            "data_extractor": data_extractor_agent
-        })
-        
         # Build workflow
         workflow = (
             MagenticBuilder()
-            .participants(**participants)
+            .participants(
+                knowledge_base=knowledge_base,
+                facts_identifier=facts_identifier_agent,
+                sql_builder=sql_builder_agent,
+                data_extractor=data_extractor_agent
+            )
             .on_event(
                 lambda event: on_orchestrator_event(event, self.event_handler), 
                 mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(
-                chat_client=self.agent_client,
+                chat_client=agent_client,
                 instructions=ORCHESTRATOR_INSTRUCTIONS,
                 max_round_count=15,
                 max_stall_count=4,

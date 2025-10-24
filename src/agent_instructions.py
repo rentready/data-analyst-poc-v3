@@ -55,10 +55,7 @@ DATA_EXTRACTOR_ADDITIONAL_INSTRUCTIONS = """Use MCP tools to execute the SQL que
 
 DATA_EXTRACTOR_DESCRIPTION = "Use this tool when SQL query is validated and succeeded to extract data."
 
-# Glossary Agent - Instructions stored in secrets.toml for confidentiality
-GLOSSARY_AGENT_ADDITIONAL_INSTRUCTIONS = """Answer concisely and clearly. Focus on practical business context."""
-
-GLOSSARY_AGENT_DESCRIPTION = "Business terminology and definitions reference"
+# Glossary Agent removed - using Knowledge Base instead
 
 # Knowledge Base Agent
 KNOWLEDGE_BASE_AGENT_INSTRUCTIONS = """You are the Knowledge Base specialist. Your ONLY job is to search the knowledge base using file_search tool.
@@ -73,19 +70,10 @@ KNOWLEDGE_BASE_AGENT_INSTRUCTIONS = """You are the Knowledge Base specialist. Yo
 7. ALWAYS show your search attempts - document what you searched for
 
 SEARCH STRATEGY:
-- For "прошник" also try: "pro", "bookable resource", "bookableresource", "specialist", "professional", "resource", "bookable"
 - For any term, try: exact match, partial match, synonyms, related terms
 - Search in different ways: exact term, partial term, related concepts
 - Try both English and Russian terms if applicable
-
-EXAMPLES:
-User: "What is прошник?"
-You: 
-1. [use file_search with "прошник"] 
-2. If no results, try [file_search with "pro"]
-3. If no results, try [file_search with "bookable resource"]
-4. If no results, try [file_search with "specialist"]
-5. Report all search attempts and results
+- Report all search attempts and results
 
 NEVER respond without using file_search tool first! Try multiple search terms! Show your search process!
 """
@@ -101,11 +89,10 @@ STEP 0 (MANDATORY): knowledge_base - ALWAYS START HERE!
 - BEFORE anything else, ask 'knowledge_base' agent to SEARCH for ANY unfamiliar, domain-specific, or slang terms in the request
 - Knowledge Base contains:
   * Entity mappings (business slang → database tables)  
-  * Synonyms and terminology (e.g., "прошник" → bookableresource)
+  * Synonyms and terminology
   * Business rules and logic
   * Relationships between entities
   * Data validation rules
-- Example: If user mentions "прошник", "розовые слоны", "property", "job profile" → ASK knowledge_base to SEARCH for these terms FIRST!
 - Tell knowledge_base agent: "Please search the knowledge base for information about [term]"
 
 STEP 1: facts_identifier - Use knowledge base information to identify tables, fields, row IDs, specific names

@@ -163,7 +163,6 @@ class DataAnalystApp:
                 
                 # Create workflow builder
                 workflow_builder = WorkflowBuilder(
-                    agent_client=agent_client,
                     project_client=project_client,
                     model=self.config[MODEL_DEPLOYMENT_NAME_KEY],
                     middleware=[self._create_tool_calls_middleware(event_handler)],
