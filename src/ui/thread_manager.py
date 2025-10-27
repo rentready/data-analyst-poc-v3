@@ -1,21 +1,19 @@
 """Thread lifecycle management for agents."""
 
 import streamlit as st
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 class ThreadManager:
     """Manages thread lifecycle for agents."""
     
-    def __init__(self, project_client, vector_store_id: Optional[str] = None):
+    def __init__(self, project_client):
         """
         Initialize thread manager.
         
         Args:
             project_client: Azure AI Project client
-            vector_store_id: Optional Vector Store ID for Knowledge Base agent
         """
         self.project_client = project_client
-        self.vector_store_id = vector_store_id
         self._thread_cache = {}
     
     async def get_or_create_thread(self, agent_name: str):
@@ -34,17 +32,8 @@ class ThreadManager:
         if session_key in st.session_state and st.session_state[session_key] is not None:
             return st.session_state[session_key]
         
-        # Create new thread with Vector Store for Knowledge Base agent
-        if agent_name == "knowledge_base" and self.vector_store_id:
-            thread = await self.project_client.agents.threads.create(
-                tool_resources={
-                    "file_search": {
-                        "vector_store_ids": [self.vector_store_id]
-                    }
-                }
-            )
-        else:
-            thread = await self.project_client.agents.threads.create()
+        # Create new thread (no special handling needed for KB agent with Azure AI Search)
+        thread = await self.project_client.agents.threads.create()
         
         # Store in session state for persistence
         st.session_state[session_key] = thread

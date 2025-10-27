@@ -8,11 +8,11 @@ from typing import Optional
 
 from src.credentials import setup_environment_variables, get_mcp_token_sync, initialize_msal_auth, get_user_initials
 from src.ui.thread_manager import ThreadManager
-from src.workflow.builder import WorkflowBuilder
+from src.workflow.builder_with_search import WorkflowBuilderWithSearch
 from src.middleware.streaming_state import StreamingStateManager
 from src.middleware.spinner_manager import SpinnerManager
 from src.ui.message_history import render_chat_history
-from src.knowledge_base_ui import render_knowledge_base_sidebar
+from src.ui.search_kb_ui import render_knowledge_base_sidebar
 from src.ui.event_handler import create_streamlit_event_handler
 
 from agent_framework import HostedMCPTool
@@ -109,15 +109,12 @@ class DataAnalystApp:
         if "messages" not in st.session_state:
             st.session_state.messages = []
         
-        # Render Knowledge Base sidebar
+        # Render Knowledge Base sidebar (Azure AI Search)
         with st.sidebar:
             try:
-                vector_store_id = st.secrets.get('vector_store_id')
-                # Create minimal config for knowledge base UI
-                kb_config = {
-                    'proj_endpoint': st.secrets["azure_ai_foundry"]["proj_endpoint"]
-                }
-                render_knowledge_base_sidebar(vector_store_id, kb_config)
+                from src.search_config import get_document_indexer
+                indexer = get_document_indexer()
+                render_knowledge_base_sidebar(indexer)
             except Exception as e:
                 st.sidebar.warning(f"Knowledge Base UI unavailable: {e}")
         
@@ -171,9 +168,8 @@ class DataAnalystApp:
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=self.azure_endpoint, credential=credential) as project_client,
         ):
-            # Create thread manager with Vector Store ID for Knowledge Base
-            vector_store_id = st.secrets.get('vector_store_id')
-            thread_manager = ThreadManager(project_client, vector_store_id)
+            # Create thread manager
+            thread_manager = ThreadManager(project_client)
             
             # Create threads for all agents
             agent_names = ["facts_identifier", "sql_builder", "data_extractor", "knowledge_base", "orchestrator"]
@@ -182,14 +178,18 @@ class DataAnalystApp:
             # Create event handler (один раз для всех)
             event_handler = create_streamlit_event_handler(self.streaming_state, self.spinner_manager)
             
-            # Create workflow builder
-            workflow_builder = WorkflowBuilder(
+            # Create workflow builder with Azure AI Search
+            from src.search_config import get_kb_search_tool
+            kb_search_tool = get_kb_search_tool()
+            
+            workflow_builder = WorkflowBuilderWithSearch(
                 project_client=project_client,
                 model=self.model_name,
                 middleware=[self._create_tool_calls_middleware(event_handler)],
                 tools=[mcp_tool_with_approval, self.get_time],
                 spinner_manager=self.spinner_manager,
-                event_handler=event_handler
+                event_handler=event_handler,
+                kb_search_tool=kb_search_tool
             )
             
             # Build workflow with all agents
