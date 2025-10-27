@@ -4,8 +4,11 @@ azure-ai-agents>=1.2.0b5
 azure-identity
 streamlit_msal
 aiohttp
-agent_framework>=1.0.0b251016
+
+# Agent Framework - core must be installed first
+agent-framework-core>=1.0.0b251016
 agent-framework-azure-ai>=1.0.0b251016
+agent_framework>=1.0.0b251016
 
 # Azure AI Search
 azure-search-documents>=11.4.0
