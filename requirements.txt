@@ -11,3 +11,5 @@ azure-search-documents>=11.4.0
 openai>=1.0.0
 tiktoken>=0.5.0
 python-dotenv>=1.0.0
+
+# Force rebuild - 2025-10-27
