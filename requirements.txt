@@ -4,6 +4,7 @@ azure-identity
 streamlit_msal
 aiohttp
 agent_framework>=1.0.0b251016
+agent-framework-azure-ai>=1.0.0b251016
 asyncio
 
 # Azure AI Search
