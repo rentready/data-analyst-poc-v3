@@ -15,61 +15,55 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Orchestrator Instructions
-ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of specialists.
+ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a team of two specialists.
 
 WORKFLOW:
-1. glossary - Get business term definitions and table/field names
-2. facts_identifier - Use glossary info + MCP tools to identify all facts (tables, fields, row IDs, specific names)
-3. sql_builder <> data_extractor
+1. data_planner - Research data, explore database, test approaches, choose best strategy
+2. data_extractor - Execute the solution, build SQL, handle errors, present results
 
-HANDOFF FORMAT (enforce this for all agents):
-** SQL Query **
-```sql
-{sql_query}
-```
-** Feedback **
-```
-{feedback}
-```
+DECISION LOGIC:
+- For most requests: Use data_planner first to research and plan, then data_extractor to execute
+- For simple requests: data_extractor can work directly
+- data_planner focuses on research and planning
+- data_extractor focuses on execution and problem-solving
 
 Your job:
-- START with glossary to get business terms and table/field names
-- THEN use facts_identifier with glossary's info to find all facts (row IDs, names, exact values)
-- PASS all identified facts (tables, fields, IDs, names) where necessary to the agents.
-- Once you submit a request to a specialist, remember, it does not know what you already know.
+- Route requests to the appropriate specialist(s)
+- Let data_planner research and plan when needed
+- Let data_extractor execute and solve problems
+- Coordinate between them when both are needed
 """
 
-# Knowledge Base Agent
-KNOWLEDGE_BASE_AGENT_INSTRUCTIONS = """You are the Knowledge Base specialist. Your ONLY job is to search the knowledge base using file_search tool.
+# Data Planner Agent Instructions
+DATA_PLANNER_INSTRUCTIONS = """You are the Data Research specialist. Your job is to investigate the data and choose the best approach:
 
-🔴 CRITICAL RULES 🔴
-1. ALWAYS use file_search tool for EVERY query - NO EXCEPTIONS
-2. Try multiple search terms if first search fails (synonyms, variations, related terms)
-3. NEVER guess or hallucinate information
-4. If file_search returns results → quote them VERBATIM with source references
-5. If file_search returns nothing after trying multiple terms → say "Knowledge base does not contain information about [term]"
-6. Quote EXACT text from files, do not paraphrase
-7. ALWAYS show your search attempts - document what you searched for
+1. Analyze the user request to understand what data is needed
+2. Search the knowledge base for business terms and table definitions
+3. Use MCP tools to explore the database schema and sample real data
+4. Find specific entities (IDs, names, values) by testing different approaches:
+   - Try exact match first (WHERE name = 'value')
+   - If not found, try partial match (WHERE name LIKE '%value%')
+   - If still not found, try similar names
+5. Test different SQL approaches and see which works best
+6. Choose the optimal data extraction strategy based on real data exploration
+7. Provide a clear plan with validated approach to the Data Extractor
 
-SEARCH STRATEGY:
-- For "прошник" also try: "pro", "bookable resource", "bookableresource", "specialist", "professional", "resource", "bookable"
-- For any term, try: exact match, partial match, synonyms, related terms
-- Search in different ways: exact term, partial term, related concepts
-- Try both English and Russian terms if applicable
+Your role: Research and plan. Let the Data Extractor execute the solution."""
 
-EXAMPLES:
-User: "What is прошник?"
-You: 
-1. [use file_search with "прошник"] 
-2. If no results, try [file_search with "pro"]
-3. If no results, try [file_search with "bookable resource"]
-4. If no results, try [file_search with "specialist"]
-5. Report all search attempts and results
+DATA_PLANNER_DESCRIPTION = "Researches data, explores database schema, tests different approaches, and chooses the best data extraction strategy."
 
-NEVER respond without using file_search tool first! Try multiple search terms! Show your search process!
-"""
+# Data Extractor Agent Instructions  
+DATA_EXTRACTOR_INSTRUCTIONS = """You are the Data Analyst. Your job is to solve the data problem:
 
-KNOWLEDGE_BASE_AGENT_DESCRIPTION = "Use this tool to search for information in the knowledge base files."
+1. Take the user request and any planning context from Data Planner
+2. Use MCP tools to build and execute SQL queries
+3. If queries fail, debug and fix them - try different approaches
+4. Format and present the results clearly
+5. Handle any data processing, aggregation, or analysis needed
+
+Your role: Execute and solve. You're the analyst who gets things done."""
+
+DATA_EXTRACTOR_DESCRIPTION = "Data analyst who executes solutions, builds SQL queries, handles errors, and presents results clearly."
 
 
 async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
@@ -112,11 +106,11 @@ class WorkflowBuilder:
     
     async def build_workflow(self, threads: dict, prompt: str):
         """
-        Build complete Magentic workflow with all agents.
+        Build complete Magentic workflow with two streamlined agents.
         
         Args:
             threads: Dictionary of thread objects
-            prompt: User prompt for facts identifier
+            prompt: User prompt for data planning
             
         Returns:
             Built Magentic workflow
@@ -129,104 +123,51 @@ class WorkflowBuilder:
             model_deployment_name=self.model, 
             thread_id=threads["orchestrator"].id
         )
-        # Create Facts Identifier agent
-        facts_instructions = """for the user request: {prompt}
-
-Identify tables and fields by using MCP Tools. When searching for specific entities (property names, market names, etc.), use progressive matching strategy:
-1. Try exact match first (WHERE name = 'value')
-2. If not found, try partial match (WHERE name LIKE '%value%')
-3. If still not found, try similar names
-
-Refine fields and tables by sampling data using SELECT TOP 1 [fields] FROM [table] and make it return requested values before finishing your response.
-
-You will justify what tools you are going to use before requesting them."""
-
-        if prompt and "{prompt}" in facts_instructions:
-            facts_instructions = facts_instructions.format(prompt=prompt)
-
-        facts_identifier_agent = agent_client.create_agent(
-            model=self.model,
-            name="Facts Identifier",
-            description="Use MCP Tools to find every entity (IDs, names, values) for the user request which is not covered by the glossary. Search for entities by name using progressive matching: 1) Exact match first, 2) Then partial/LIKE match, 3) Then similar names, 4) Take larger datasets. Execute SELECT TOP XXX to validate found entities.",
-            instructions=facts_instructions,
-            middleware=self.middleware,
-            tools=self.tools,
-            conversation_id=threads["facts_identifier"].id,
-            temperature=0.1,
-            additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
-        )
-        
-        # Create SQL Builder agent
-        sql_builder_agent = agent_client.create_agent(
-            model=self.model,
-            name="SQL Builder",
-            description="Use this tool when all data requirements and facts are extracted, all referenced entities are identified, fields and tables are known. Use this tool to pass known table names, fields and filters and ask to construct an SQL query to address user's request and ensure it works as expected by executing MCP Tools with SELECT ....",
-            instructions="""You construct SQL queries per user request. You always use MCP Tools to validate your query and never generate anything on your own.
-You will justify what tools you are going to use before requesting them.
-OUTPUT FORMAT:
-** SQL Query **
-```sql
-{sql_query}
-```
-** Data Sample **
-```
-{real_data_sample}
-```
-** Feedback **
-```
-{your assumptions, validation notes, or questions}
-```
-""",
-            middleware=self.middleware,
-            tools=self.tools,
-            conversation_id=threads["sql_builder"].id,
-            temperature=0.1,
-            additional_instructions="Annotate what you want before using MCP Tools. Use MCP tools to validate tables and fields by executing SELECT TOP 1 before building the final query."
-        )
-        sql_builder_agent.user = "sql_builder"
-        
-        # Create Data Extractor agent
-        data_extractor_agent = agent_client.create_agent(
-            model=self.model,
-            name="Data Extractor",
-            description="Use this tool when SQL query is validated and succeeded to extract data.",
-            instructions="""Execute SQL queries using MCP tools and return formatted results.
-
-OUTPUT FORMAT:
-Present data in tables or structured format.""",
-            middleware=self.middleware,
-            tools=self.tools,
-            conversation_id=threads["data_extractor"].id,
-            temperature=0.1,
-            additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
-        )
         
         # Create file search tool for knowledge base
         vector_store_id = st.secrets['vector_store_id']
         file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
-        
-        # Create Knowledge Base agent with file search tool
-        knowledge_base = agent_client.create_agent(
+
+        # Create Data Planner agent (combines knowledge base + facts identification + SQL building)
+        data_planner_instructions = f"""For the user request: {prompt}
+
+{DATA_PLANNER_INSTRUCTIONS}
+
+You will justify what tools you are going to use before requesting them."""
+
+        data_planner_agent = agent_client.create_agent(
             model=self.model,
-            name="Knowledge Base Agent",
-            description=KNOWLEDGE_BASE_AGENT_DESCRIPTION,
-            instructions=KNOWLEDGE_BASE_AGENT_INSTRUCTIONS,
+            name="Data Planner",
+            description=DATA_PLANNER_DESCRIPTION,
+            instructions=data_planner_instructions,
             middleware=self.middleware,
-            tools=file_search_tool,
-            conversation_id=threads["knowledge_base"].id,
-            temperature=0.0,
+            tools=self.tools + [file_search_tool],
+            conversation_id=threads["data_planner"].id,
+            temperature=0.1,
+            additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
         )
-        logger.info(f"✅ Knowledge Base Agent created with vector_store_id: {vector_store_id[:20]}...")
+        
+        # Create Data Extractor agent (also has access to knowledge base for complex cases)
+        data_extractor_agent = agent_client.create_agent(
+            model=self.model,
+            name="Data Extractor",
+            description=DATA_EXTRACTOR_DESCRIPTION,
+            instructions=DATA_EXTRACTOR_INSTRUCTIONS,
+            middleware=self.middleware,
+            tools=self.tools + [file_search_tool],
+            conversation_id=threads["data_extractor"].id,
+            temperature=0.1,
+            additional_instructions="Use MCP tools to explore database, build and execute SQL queries. Handle errors by trying different approaches. Present results clearly."
+        )
+        
+        logger.info(f"✅ Data Planner Agent created with vector_store_id: {vector_store_id[:20]}...")
+        logger.info(f"✅ Data Extractor Agent created")
 
-        logger.info(f"Created agent {sql_builder_agent}")
-
-        # Build workflow
+        # Build workflow with only two agents
         workflow = (
             MagenticBuilder()
             .participants(
-                knowledge_base=knowledge_base,
-                facts_identifier=facts_identifier_agent,
-                sql_builder=sql_builder_agent,
+                data_planner=data_planner_agent,
                 data_extractor=data_extractor_agent
             )
             .on_event(
@@ -234,11 +175,11 @@ Present data in tables or structured format.""",
                 mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(
-                chat_client=agent_client,
                 instructions=ORCHESTRATOR_INSTRUCTIONS,
-                max_round_count=15,
-                max_stall_count=4,
-                max_reset_count=2,
+                chat_client=agent_client,
+                max_round_count=5,  # Further reduced since agents are autonomous
+                max_stall_count=2,
+                max_reset_count=1,
             )
             .build()
         )
