@@ -1,5 +1,4 @@
 # Core agent framework
-agent_framework>=1.0.0b251016
 agent-framework>=1.0.0b251016
 agent-framework-core>=1.0.0b251016
 agent-framework-azure-ai>=1.0.0b251016
