@@ -181,8 +181,7 @@ class DataAnalystApp:
             # Build workflow with all agents
             workflow = await workflow_builder.build_workflow(threads, prompt)
             async for event in workflow.run_stream(prompt):
-                if not isinstance(event, MagenticAgentDeltaEvent):
-                    await event_handler.handle_orchestrator_message(event)
+                await event_handler.handle_orchestrator_message(event)
 
             self.spinner_manager.stop()
     
