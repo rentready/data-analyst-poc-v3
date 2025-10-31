@@ -13,7 +13,7 @@ from azure.ai.agents.models import (
 
 # Magentic events from agent_framework
 from agent_framework import (
-    MagenticCallbackEvent,
+    MagenticOrchestratorMessageEvent,
     MagenticOrchestratorMessageEvent,
     MagenticAgentDeltaEvent,
     MagenticAgentMessageEvent,
@@ -141,7 +141,7 @@ class EventRenderer:
     
     # ===== Основной метод рендеринга =====
     
-    def render(self, event: Union[MagenticCallbackEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
+    def render(self, event: Union[MagenticOrchestratorMessageEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """
         Render event to UI.
         
