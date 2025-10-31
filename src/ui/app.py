@@ -171,16 +171,25 @@ class DataAnalystApp:
             # Create thread manager
             thread_manager = ThreadManager(project_client)
             
-            # Create threads for all agents
-            agent_names = ["facts_identifier", "sql_builder", "data_extractor", "knowledge_base", "orchestrator"]
+            # Create threads for all agents (include cosmosdb_kb thread)
+            agent_names = ["facts_identifier", "sql_builder", "data_extractor", "knowledge_base", "cosmosdb_kb", "orchestrator"]
             threads = await thread_manager.get_all_threads(agent_names)
             
             # Create event handler (один раз для всех)
             event_handler = create_streamlit_event_handler(self.streaming_state, self.spinner_manager)
             
             # Create workflow builder with Azure AI Search
-            from src.search_config import get_kb_search_tool
+            from src.search_config import get_kb_search_tool, get_cosmosdb_kb_search_tool
             kb_search_tool = get_kb_search_tool()
+            
+            # Try to get Cosmos DB search tool (optional)
+            cosmosdb_kb_search_tool = None
+            try:
+                cosmosdb_kb_search_tool = get_cosmosdb_kb_search_tool()
+                if cosmosdb_kb_search_tool:
+                    logger.info('✅ Cosmos DB Knowledge Base tool initialized')
+            except Exception as e:
+                logger.warning(f'Cosmos DB Knowledge Base tool not available: {e}')
             
             workflow_builder = WorkflowBuilderWithSearch(
                 project_client=project_client,
@@ -189,7 +198,8 @@ class DataAnalystApp:
                 tools=[mcp_tool_with_approval, self.get_time],
                 spinner_manager=self.spinner_manager,
                 event_handler=event_handler,
-                kb_search_tool=kb_search_tool
+                kb_search_tool=kb_search_tool,
+                cosmosdb_kb_search_tool=cosmosdb_kb_search_tool
             )
             
             # Build workflow with all agents

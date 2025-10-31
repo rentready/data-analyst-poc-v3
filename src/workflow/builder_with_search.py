@@ -10,6 +10,7 @@ from agent_framework import (
 import logging
 
 from src.tools.search_knowledge_base import KnowledgeBaseSearchTool
+from src.tools.search_cosmosdb_knowledge_base import CosmosDBKnowledgeBaseSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +19,24 @@ ORCHESTRATOR_INSTRUCTIONS = """You are the LEAD DATA ANALYST orchestrating a tea
 
 🔴 CRITICAL: MANDATORY WORKFLOW 🔴
 
-STEP 0 (MANDATORY): knowledge_base - ALWAYS START HERE!
-- BEFORE anything else, ask 'knowledge_base' to SEARCH for ANY unfamiliar, domain-specific, or slang terms in the request
+STEP 0A (MANDATORY): cosmosdb_kb - Check Cosmos DB Knowledge Base FIRST for company/property names!
+- ALWAYS start here if user mentions ANY company names, property names, or organization names
+- Cosmos DB contains: Company names, Property names, Account information, Organizational units
+- Example: If user mentions "Vest", "Residences", any property/company name → ASK cosmosdb_kb FIRST!
+- Tell cosmosdb_kb: "Search for [company/property name]"
+
+STEP 0B (MANDATORY): knowledge_base - Then check general knowledge base for terms and definitions!
+- After cosmosdb_kb, ask 'knowledge_base' to SEARCH for ANY unfamiliar, domain-specific, or slang terms
 - Knowledge Base contains:
   * Entity mappings (business slang → database tables)  
   * Synonyms and terminology (e.g., "прошник" → bookableresource)
   * Business rules and logic
   * Relationships between entities
   * Data validation rules
-- Example: If user mentions "прошник", "DSAT", "property", "job profile" → ASK knowledge_base to SEARCH for these terms FIRST!
+- Example: If user mentions "прошник", "DSAT", "turn", "job profile" → ASK knowledge_base to SEARCH!
 - Tell knowledge_base: "Search for information about [term]"
 
-STEP 1: facts_identifier - Use knowledge base information to identify tables, fields, row IDs, specific names
+STEP 1: facts_identifier - Use BOTH knowledge bases to identify tables, fields, row IDs, specific names
 STEP 2: sql_builder <> data_extractor
 
 HANDOFF FORMAT (enforce this for all agents):
@@ -43,7 +50,8 @@ HANDOFF FORMAT (enforce this for all agents):
 ```
 
 Your job:
-- START with knowledge_base for ANY unfamiliar terms (synonyms, slang, domain-specific terms)
+- START with cosmosdb_kb for ANY company/property names
+- THEN use knowledge_base for ANY unfamiliar terms (synonyms, slang, domain-specific terms)
 - THEN use facts_identifier with knowledge base info to find all facts (row IDs, names, exact values)
 - PASS all identified facts (tables, fields, IDs, names) where necessary to the agents
 - Once you submit a request to a specialist, remember, it does not know what you already know
@@ -78,6 +86,35 @@ NEVER respond without using search_knowledge_base tool first! Try multiple searc
 
 KNOWLEDGE_BASE_AGENT_DESCRIPTION = "Use this tool to search for information in the knowledge base. Searches indexed documents using hybrid search (keyword + semantic)."
 
+# Cosmos DB Knowledge Base Agent Instructions
+COSMOSDB_KB_AGENT_INSTRUCTIONS = """You are the Cosmos DB Knowledge Base specialist. Your ONLY job is to search Cosmos DB for company and property information.
+
+🔴 CRITICAL RULES 🔴
+1. ALWAYS use search_cosmosdb_accounts tool for EVERY query - NO EXCEPTIONS
+2. Try multiple search terms if first search fails (variations, partial names)
+3. NEVER guess or hallucinate information
+4. If search returns results → quote them VERBATIM with all details
+5. If search returns nothing after trying multiple terms → say "Cosmos DB does not contain information about [name]"
+6. Quote EXACT data from search results, do not paraphrase
+7. ALWAYS show your search attempts - document what you searched for
+
+SEARCH STRATEGY:
+- For "Vest" also try: "Vest Residential", "vest", "VEST"
+- For any name, try: exact match, partial match, lowercase
+- Try both full names and short names if applicable
+- Report all search attempts and results
+
+TOOL USAGE:
+- Call search_cosmosdb_accounts(query="name to search", top_k=10)
+- Analyze results and extract relevant information (account ID, name, location, etc.)
+- Try different queries if first attempt doesn't find anything
+- Return all found accounts with full details
+
+NEVER respond without using search_cosmosdb_accounts tool first! Try multiple search terms! Show your search process!
+"""
+
+COSMOSDB_KB_AGENT_DESCRIPTION = "Use this tool to search for company and property names in Cosmos DB. Searches accounts/properties using hybrid search (keyword + semantic)."
+
 
 async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
     """
@@ -106,7 +143,8 @@ class WorkflowBuilderWithSearch:
         tools: list, 
         spinner_manager, 
         event_handler,
-        kb_search_tool: KnowledgeBaseSearchTool
+        kb_search_tool: KnowledgeBaseSearchTool,
+        cosmosdb_kb_search_tool: CosmosDBKnowledgeBaseSearchTool = None
     ):
         """
         Initialize workflow builder.
@@ -119,6 +157,7 @@ class WorkflowBuilderWithSearch:
             spinner_manager: Spinner manager instance
             event_handler: Unified event handler instance
             kb_search_tool: Knowledge Base search tool instance
+            cosmosdb_kb_search_tool: Cosmos DB Knowledge Base search tool instance (optional)
         """
         self.project_client = project_client
         self.model = model
@@ -127,6 +166,7 @@ class WorkflowBuilderWithSearch:
         self.spinner_manager = spinner_manager
         self.event_handler = event_handler
         self.kb_search_tool = kb_search_tool
+        self.cosmosdb_kb_search_tool = cosmosdb_kb_search_tool
     
     async def build_workflow(self, threads: dict, prompt: str):
         """
@@ -220,6 +260,47 @@ Present data in tables or structured format.""",
             additional_instructions="Use MCP tools to execute the SQL query. Present results clearly."
         )
         
+        # Create Cosmos DB Knowledge Base Agent (if available)
+        # This agent searches for company/property names in Cosmos DB
+        cosmosdb_kb_agent = None
+        if self.cosmosdb_kb_search_tool:
+            async def search_cosmosdb_accounts(query: str, top_k: int = 10) -> str:
+                """
+                Search Cosmos DB for company and property account information using semantic search.
+                
+                Args:
+                    query: Company or property name to search for
+                    top_k: Number of results to return (default: 10)
+                    
+                Returns:
+                    Formatted search results with account details (name, ID, location, etc.)
+                """
+                try:
+                    logger.info(f'🔍 Cosmos DB KB Agent searching for: "{query}" (top_k={top_k})')
+                    results = await self.cosmosdb_kb_search_tool.search_and_format(
+                        query=query,
+                        top_k=top_k,
+                        search_type='semantic'
+                    )
+                    logger.info(f'✅ Cosmos DB KB Agent found {len(results)} chars of results')
+                    return results
+                except Exception as e:
+                    logger.error(f'❌ Cosmos DB KB search error: {e}', exc_info=True)
+                    return f'Error searching Cosmos DB knowledge base: {str(e)}'
+            
+            cosmosdb_kb_agent = agent_client.create_agent(
+                model=self.model,
+                name="Cosmos DB Knowledge Base Agent",
+                description=COSMOSDB_KB_AGENT_DESCRIPTION,
+                instructions=COSMOSDB_KB_AGENT_INSTRUCTIONS,
+                middleware=self.middleware,
+                tools=[search_cosmosdb_accounts],
+                conversation_id=threads.get("cosmosdb_kb", threads["knowledge_base"]).id,
+                temperature=0.0,
+            )
+            
+            logger.info('✅ Cosmos DB Knowledge Base Agent created with Azure AI Search')
+        
         # Create Knowledge Base Agent with custom search tool
         # This agent uses our KnowledgeBaseSearchTool instead of HostedFileSearchTool
         
@@ -266,15 +347,24 @@ Present data in tables or structured format.""",
 
         logger.info(f'Created agent {sql_builder_agent}')
 
-        # Build workflow
+        # Build workflow with or without Cosmos DB agent
+        builder = MagenticBuilder()
+        
+        # Add participants (conditionally include cosmosdb_kb if available)
+        participants = {
+            'knowledge_base': knowledge_base_agent,
+            'facts_identifier': facts_identifier_agent,
+            'sql_builder': sql_builder_agent,
+            'data_extractor': data_extractor_agent
+        }
+        
+        if cosmosdb_kb_agent:
+            participants['cosmosdb_kb'] = cosmosdb_kb_agent
+            logger.info('✅ Cosmos DB KB agent added to workflow')
+        
         workflow = (
-            MagenticBuilder()
-            .participants(
-                knowledge_base=knowledge_base_agent,
-                facts_identifier=facts_identifier_agent,
-                sql_builder=sql_builder_agent,
-                data_extractor=data_extractor_agent
-            )
+            builder
+            .participants(**participants)
             .on_event(
                 lambda event: on_orchestrator_event(event, self.event_handler), 
                 mode=MagenticCallbackMode.STREAMING

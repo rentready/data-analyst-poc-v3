@@ -1,17 +1,26 @@
-streamlit
-azure-ai-projects>=1.1.0b4
-azure-ai-agents>=1.2.0b5
-azure-identity
-streamlit_msal
-aiohttp
+# Core agent framework
+agent-framework==1.0.0b251016
+agent-framework-core==1.0.0b251016
+agent-framework-azure-ai==1.0.0b251016
 
-# Agent Framework - core must be installed first
-agent-framework-core>=1.0.0b251016
-agent-framework-azure-ai>=1.0.0b251016
-agent_framework>=1.0.0b251016
+# Azure AI services
+azure-ai-agents==1.2.0b5
+azure-ai-projects==1.1.0b4
+azure-identity==1.25.1
+azure-core==1.36.0
+azure-search-documents==11.6.0
+azure-storage-blob==12.27.0
+azure-monitor-opentelemetry==1.8.1
+azure-monitor-opentelemetry-exporter==1.0.0b44
 
-# Azure AI Search
-azure-search-documents>=11.4.0
-openai>=1.0.0
-tiktoken>=0.5.0
-python-dotenv>=1.0.0
+# OpenAI
+openai==1.109.1
+
+# Streamlit and UI
+streamlit==1.50.0
+streamlit-msal==0.2.0
+
+# Utilities
+toml==0.10.2
+python-dotenv==1.0.1
+nest-asyncio==1.6.0

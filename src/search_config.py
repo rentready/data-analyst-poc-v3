@@ -9,6 +9,7 @@ from src.search.embeddings import EmbeddingsGenerator
 from src.search.indexer import DocumentIndexer
 from src.search.chunking import TextChunker
 from src.tools.search_knowledge_base import KnowledgeBaseSearchTool
+from src.tools.search_cosmosdb_knowledge_base import CosmosDBKnowledgeBaseSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,10 @@ _search_client: Optional[SearchClient] = None
 _embeddings_generator: Optional[EmbeddingsGenerator] = None
 _document_indexer: Optional[DocumentIndexer] = None
 _kb_search_tool: Optional[KnowledgeBaseSearchTool] = None
+
+# Cosmos DB Knowledge Base instances
+_cosmosdb_search_client: Optional[SearchClient] = None
+_cosmosdb_kb_search_tool: Optional[CosmosDBKnowledgeBaseSearchTool] = None
 
 
 def init_azure_search_config() -> dict:
@@ -33,6 +38,9 @@ def init_azure_search_config() -> dict:
             'search_index_name': st.secrets['azure_search']['index_name'],
             'search_admin_key': st.secrets['azure_search']['admin_key'],
             'search_query_key': st.secrets['azure_search'].get('query_key'),
+            
+            # Cosmos DB Knowledge Base
+            'cosmosdb_index_name': st.secrets['azure_search'].get('cosmosdb_index_name'),
             
             # Embeddings
             'embeddings_model': st.secrets['embeddings']['model'],
@@ -183,14 +191,74 @@ def get_kb_search_tool() -> KnowledgeBaseSearchTool:
     return _kb_search_tool
 
 
+def get_cosmosdb_search_client() -> Optional[SearchClient]:
+    """
+    Get or create SearchClient instance for Cosmos DB index (singleton).
+    
+    Returns:
+        SearchClient instance for Cosmos DB or None if not configured
+    """
+    global _cosmosdb_search_client
+    
+    if _cosmosdb_search_client is None:
+        config = init_azure_search_config()
+        
+        cosmosdb_index = config.get('cosmosdb_index_name')
+        if not cosmosdb_index:
+            logger.warning('Cosmos DB index not configured in secrets.toml')
+            return None
+        
+        _cosmosdb_search_client = SearchClient(
+            endpoint=config['search_endpoint'],
+            index_name=cosmosdb_index,
+            api_key=config.get('search_query_key', config['search_admin_key']),
+            use_semantic_search=config['use_semantic_search'],
+            use_hybrid_search=config['use_hybrid_search']
+        )
+        
+        logger.info(f'Initialized Cosmos DB SearchClient for index: {cosmosdb_index}')
+    
+    return _cosmosdb_search_client
+
+
+def get_cosmosdb_kb_search_tool() -> Optional[CosmosDBKnowledgeBaseSearchTool]:
+    """
+    Get or create CosmosDBKnowledgeBaseSearchTool instance (singleton).
+    
+    Returns:
+        CosmosDBKnowledgeBaseSearchTool instance or None if not configured
+    """
+    global _cosmosdb_kb_search_tool
+    
+    if _cosmosdb_kb_search_tool is None:
+        cosmosdb_client = get_cosmosdb_search_client()
+        
+        if cosmosdb_client is None:
+            logger.warning('Cannot create CosmosDBKnowledgeBaseSearchTool: Cosmos DB search client not available')
+            return None
+        
+        _cosmosdb_kb_search_tool = CosmosDBKnowledgeBaseSearchTool(
+            search_client=cosmosdb_client
+        )
+        
+        logger.info('Initialized CosmosDBKnowledgeBaseSearchTool')
+    
+    return _cosmosdb_kb_search_tool
+
+
 # Cleanup functions
 async def cleanup_search_resources():
     """Cleanup all search-related resources."""
     global _search_client, _embeddings_generator, _document_indexer, _kb_search_tool
+    global _cosmosdb_search_client, _cosmosdb_kb_search_tool
     
     if _search_client:
         await _search_client.close()
         _search_client = None
+    
+    if _cosmosdb_search_client:
+        await _cosmosdb_search_client.close()
+        _cosmosdb_search_client = None
     
     if _embeddings_generator:
         await _embeddings_generator.close()
@@ -201,6 +269,7 @@ async def cleanup_search_resources():
         _document_indexer = None
     
     _kb_search_tool = None
+    _cosmosdb_kb_search_tool = None
     
     logger.info('Cleaned up all search resources')
 
