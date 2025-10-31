@@ -2,8 +2,6 @@
 
 from agent_framework import (
     MagenticBuilder,
-    MagenticCallbackMode,
-    MagenticCallbackEvent,
     MagenticOrchestratorMessageEvent,
     MagenticFinalResultEvent,
     HostedFileSearchTool,
@@ -66,7 +64,7 @@ Your role: Execute and solve. You're the analyst who gets things done."""
 DATA_EXTRACTOR_DESCRIPTION = "Data analyst who executes solutions, builds SQL queries, handles errors, and presents results clearly."
 
 
-async def on_orchestrator_event(event: MagenticCallbackEvent, event_handler) -> None:
+async def on_orchestrator_event(event: MagenticOrchestratorMessageEvent, event_handler) -> None:
     """
     Handle workflow-level events (orchestrator messages, final results) via unified event handler.
     
@@ -169,10 +167,6 @@ You will justify what tools you are going to use before requesting them."""
             .participants(
                 data_planner=data_planner_agent,
                 data_extractor=data_extractor_agent
-            )
-            .on_event(
-                lambda event: on_orchestrator_event(event, self.event_handler), 
-                mode=MagenticCallbackMode.STREAMING
             )
             .with_standard_manager(
                 instructions=ORCHESTRATOR_INSTRUCTIONS,
