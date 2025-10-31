@@ -1,26 +1,26 @@
 # Core agent framework
-agent-framework==1.0.0b251016
-agent-framework-core==1.0.0b251016
-agent-framework-azure-ai==1.0.0b251016
+agent-framework>=1.0.0b251016
+agent-framework-core>=1.0.0b251016
+agent-framework-azure-ai>=1.0.0b251016
 
 # Azure AI services
-azure-ai-agents==1.2.0b5
-azure-ai-projects==1.1.0b4
-azure-identity==1.25.1
-azure-core==1.36.0
-azure-search-documents==11.6.0
-azure-storage-blob==12.27.0
-azure-monitor-opentelemetry==1.8.1
-azure-monitor-opentelemetry-exporter==1.0.0b44
+azure-ai-agents>=1.2.0b5
+azure-ai-projects>=1.1.0b4
+azure-identity>=1.25.0
+azure-core>=1.30.0
+azure-search-documents>=11.6.0
+azure-storage-blob>=12.19.0
+azure-monitor-opentelemetry>=1.6.0
+azure-monitor-opentelemetry-exporter>=1.0.0b30
 
 # OpenAI
-openai==1.109.1
+openai>=1.30.0
 
 # Streamlit and UI
-streamlit==1.50.0
-streamlit-msal==0.2.0
+streamlit>=1.30.0
+streamlit-msal>=0.2.0
 
 # Utilities
-toml==0.10.2
-python-dotenv==1.0.1
-nest-asyncio==1.6.0
+toml>=0.10.2
+python-dotenv>=1.0.0
+nest-asyncio>=1.6.0
