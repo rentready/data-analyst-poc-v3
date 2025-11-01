@@ -210,7 +210,7 @@ class DataExecutorAgent(Executor):
         logger.info(f"Creating executor agent with {len(self._tools)} tools: {[type(t).__name__ for t in self._tools]}")
         return self._agent_client.create_agent(
             model=getattr(self._agent_client, "model_deployment_name", None),
-            name="AI Assistant",
+            name="Data Analyst",
             description="Friendly AI assistant with set of tools to query different data and help users with that.",
             instructions="""You are a friendly AI assistant. Use MCP tools to execute SQL queries and get actual data. Don't just explain - actually run the queries and return the results.""",
             tools=self._tools,
