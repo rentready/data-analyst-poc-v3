@@ -83,6 +83,7 @@ class StreamingStateManager:
         
         # Clean up state
         if agent_id in self._containers:
+            self._containers[agent_id].empty()
             del self._containers[agent_id]
         if agent_id in self._accumulated_text:
             del self._accumulated_text[agent_id]
