@@ -115,8 +115,106 @@ class StreamlitEventHandler:
         
         except Exception as e:
             logger.error(f"Error handling FinalResult: {e}")
+    
+    async def handle_workflow_event(self, event: Any) -> None:
+        """Обработка событий нового workflow"""
+        try:
+            event_type = type(event).__name__
+            logger.info(f"Handling workflow event: {event_type}")
+            
+            if event_type == "ExecutorInvokedEvent":
+                await self._handle_executor_invoked(event)
+            elif event_type == "ExecutorCompletedEvent":
+                await self._handle_executor_completed(event)
+            elif event_type == "WorkflowOutputEvent":
+                await self._handle_workflow_output(event)
+            elif event_type == "WorkflowStatusEvent":
+                await self._handle_workflow_status(event)
+            else:
+                logger.info(f"Unhandled workflow event type: {event_type}")
+        
+        except Exception as e:
+            logger.error(f"Error handling workflow event: {e}")
+    
+    async def _handle_executor_invoked(self, event: Any) -> None:
+        """Handle ExecutorInvokedEvent"""
+        try:
+            executor_id = getattr(event, 'executor_id', 'unknown')
+            logger.info(f"Executor invoked: {executor_id}")
+            
+            self.spinner_manager.stop()
+            
+            # Create container for message
+            container = self.event_renderer.create_message_container()
+            self.streaming_state.start_streaming(executor_id, container)
+            
+        except Exception as e:
+            logger.error(f"Error handling executor invoked: {e}")
+    
+    async def _handle_executor_completed(self, event: Any) -> None:
+        """Handle ExecutorCompletedEvent"""
+        try:
+            executor_id = getattr(event, 'executor_id', 'unknown')
+            logger.info(f"Executor completed: {executor_id}")
+            
+            if self.streaming_state.is_streaming(executor_id):
+                self.streaming_state.end_streaming(executor_id)
+            
+            self.spinner_manager.start("Processing result...")
+            
+        except Exception as e:
+            logger.error(f"Error handling executor completed: {e}")
+    
+    async def _handle_workflow_output(self, event: Any) -> None:
+        """Handle WorkflowOutputEvent"""
+        try:
+            logger.info("Workflow output received")
+            
+            if hasattr(event, 'data'):
+                result = event.data
+                logger.info(f"Output data type: {type(result).__name__}")
+                
+                # Handle result based on type
+                if hasattr(result, 'analysis'):
+                    # This is ExecutionResult
+                    analysis = result.analysis
+                    logger.info(f"Analysis length: {len(analysis) if analysis else 0}")
+                    
+                    self.spinner_manager.stop()
+                    
+                    # Create container for final result
+                    container = self.event_renderer.create_message_container()
+                    self.streaming_state.start_streaming("final", container)
+                    
+                    # Display result
+                    result_text = f"""
+## ✅ Analysis Complete
+
+{analysis}
+                    """
+                    
+                    self.event_renderer.render_agent_text(result_text, "final")
+                    self.streaming_state.end_streaming("final")
+                else:
+                    logger.warning(f"Unknown result type: {type(result)}")
+            
+        except Exception as e:
+            logger.error(f"Error handling workflow output: {e}")
+    
+    async def _handle_workflow_status(self, event: Any) -> None:
+        """Handle WorkflowStatusEvent"""
+        try:
+            status = getattr(event, 'status', 'unknown')
+            logger.info(f"Workflow status: {status}")
+            
+            if status == "completed":
+                self.spinner_manager.stop()
+                logger.info("Workflow completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error handling workflow status: {e}")
 
 
 def create_streamlit_event_handler(streaming_state, spinner_manager) -> StreamlitEventHandler:
-    """Создать обработчик событий для Streamlit"""
+    """Create event handler for Streamlit"""
     return StreamlitEventHandler(streaming_state, spinner_manager)
