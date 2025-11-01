@@ -1,7 +1,8 @@
 """Executor classes for the new orchestrator workflow."""
 
 import logging
-from typing import Dict, List, Any, Optional
+import json
+from typing import Dict, List, Any, Optional, Union
 
 from agent_framework import (
     Executor,
@@ -10,7 +11,7 @@ from agent_framework import (
 )
 from agent_framework.azure import AzureAIAgentClient
 
-from .models import DataExtractionRequest, ExecutionResult, ReviewFeedback, EntityList, generate_request_id
+from .models import DataExtractionRequest, ExecutionResult, ReviewFeedback, EntityList, generate_request_id, FormattedReportRequest
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +79,9 @@ Return only a simple list of entities, one per line, without explanations.""",
         user_query: str, 
         ctx: WorkflowContext[EntityList]
     ) -> None:
-        """Extracts entities from user query"""
+        """Extracts entities from user query (handles both initial queries and refined prompts from reviewer)"""
         
-        logger.info(f"🔍 EntityExtractor.extract_entities called with query: {user_query}")
+        logger.info(f"🔍 EntityExtractor.extract_entities called with query: {user_query[:100]}...")
         
         try:
             prompt = f"Extract entity names, terms, and key concepts from this user query: {user_query}\n\nReturn only a simple list of entities, one per line, without explanations."
@@ -188,44 +189,6 @@ class KnowledgeBaseSearcher(Executor):
                 knowledge_terms=""
             )
             await ctx.send_message(fallback_request)
-    
-    @handler
-    async def refine_search_with_feedback(
-        self,
-        feedback: ReviewFeedback,
-        ctx: WorkflowContext[DataExtractionRequest]
-    ) -> None:
-        """Refines knowledge base search based on reviewer feedback"""
-        
-        logger.info(f"🔍 KnowledgeBaseSearcher.refine_search_with_feedback called with feedback: {feedback.feedback}")
-        
-        try:
-            # Search again with additional context from feedback
-            prompt = f"Previous search was not sufficient. The reviewer provided this feedback: {feedback.feedback}\n\nPlease search the knowledge base more thoroughly. Use the Knowledge Base Search Tool to find additional relevant information based on the reviewer's feedback.\n\nIf there are missing entities or terms mentioned in the feedback, search for those specifically."
-            
-            # Run the agent with run_stream and collect all text
-            additional_knowledge = await _collect_stream_text(self._agent, prompt)
-            
-            logger.info(f"Refined knowledge base search completed, found {len(additional_knowledge)} chars")
-            
-            # We need to preserve user_prompt from original request
-            # For now, we'll use empty string - executor will need to get it from context
-            request = DataExtractionRequest(
-                request_id=feedback.request_id,
-                user_prompt="",  # Should be preserved from original request
-                knowledge_terms=additional_knowledge
-            )
-            
-            await ctx.send_message(request)
-            
-        except Exception as e:
-            logger.error(f"Error refining knowledge base search: {e}", exc_info=True)
-            fallback_request = DataExtractionRequest(
-                request_id=feedback.request_id,
-                user_prompt="",
-                knowledge_terms=""
-            )
-            await ctx.send_message(fallback_request)
 
 
 class DataExecutorAgent(Executor):
@@ -296,6 +259,56 @@ class DataExecutorAgent(Executor):
                 analysis=f"Error: {str(e)}"
             )
             await ctx.send_message(fallback_result)
+    
+    @handler
+    async def retry_execution(
+        self,
+        refined_prompt: str,
+        ctx: WorkflowContext[ExecutionResult]
+    ) -> None:
+        """Retries execution with refined prompt from reviewer"""
+        
+        logger.info(f"🔍 DataExecutorAgent.retry_execution called with refined prompt: {refined_prompt[:100]}...")
+        
+        try:
+            # Use refined prompt directly - chat history is preserved
+            # The prompt should be something like "all empty, try like this..."
+            execution_prompt = refined_prompt
+            
+            # Run the agent with run_stream and collect all text
+            analysis = await _collect_stream_text(self._agent, execution_prompt)
+            
+            logger.info(f"Retry execution completed, collected {len(analysis)} chars")
+            
+            # Create result with new analysis
+            # We need to preserve original request_id, but we don't have it here
+            # For now, generate new one
+            result = ExecutionResult(
+                request_id=generate_request_id(),
+                request=DataExtractionRequest(
+                    request_id=generate_request_id(),
+                    user_prompt=refined_prompt,
+                    knowledge_terms=""
+                ),
+                extracted_data="",
+                analysis=analysis
+            )
+            
+            await ctx.send_message(result)
+            
+        except Exception as e:
+            logger.error(f"Error retrying execution: {e}", exc_info=True)
+            fallback_result = ExecutionResult(
+                request_id=generate_request_id(),
+                request=DataExtractionRequest(
+                    request_id=generate_request_id(),
+                    user_prompt=refined_prompt,
+                    knowledge_terms=""
+                ),
+                extracted_data="",
+                analysis=f"Error: {str(e)}"
+            )
+            await ctx.send_message(fallback_result)
 
 
 class ReviewerExecutor(Executor):
@@ -340,9 +353,9 @@ Return your response in JSON format with fields: approved (boolean), feedback (s
     async def review_results(
         self,
         result: ExecutionResult,
-        ctx: WorkflowContext[ReviewFeedback]
+        ctx: WorkflowContext[Union[FormattedReportRequest, str]]
     ) -> None:
-        """Reviews the quality of execution results"""
+        """Reviews the quality of execution results. Returns FormattedReportRequest if approved (to formatter) or str if not approved (to executor)."""
         
         logger.info(f"Reviewing results for request {result.request_id}")
         
@@ -357,50 +370,117 @@ Result: {result.analysis}
 Data: {result.extracted_data}
 
 Check if the query was answered properly, data quality is good, analysis is complete, and there are no errors.
-Return JSON with: approved (boolean), feedback (string), missing_steps (list, optional).
+
+Return JSON with "approved" (boolean) and "feedback" (string) fields.
 """
             
             # Run the agent with run_stream and collect all text
             review_text = await _collect_stream_text(self._agent, review_prompt)
             
-            # Try to parse JSON from review text
-            import json
-            review_json = {
-                "approved": True,
-                "feedback": review_text,
-                "missing_steps": []
-            }
-            
-            # Try to extract JSON from the text
+            # Try to parse JSON response
+            approved = False
+            feedback = ""
             try:
-                # Look for JSON object in the text
-                import re
-                json_match = re.search(r'\{[^{}]*"approved"[^{}]*\}', review_text, re.DOTALL)
-                if json_match:
-                    parsed_json = json.loads(json_match.group())
-                    review_json.update(parsed_json)
-            except Exception:
-                # If JSON parsing fails, use the full text as feedback
-                pass
-                
-            feedback = ReviewFeedback(
-                request_id=result.request_id,
-                approved=review_json.get("approved", False),
-                feedback=review_json.get("feedback", review_text),
-                missing_steps=review_json.get("missing_steps")
-            )
+                review_json = json.loads(review_text.strip())
+                approved = review_json.get("approved", False)
+                feedback = review_json.get("feedback", "")
+            except (json.JSONDecodeError, ValueError):
+                # Fallback: check for "APPROVED" text
+                if "APPROVED" in review_text.upper() or review_text.strip().upper() == "APPROVED":
+                    approved = True
             
-            logger.info(f"Review completed for {result.request_id}, approved: {feedback.approved}")
-            
-            await ctx.send_message(feedback)
+            if approved:
+                logger.info(f"Review approved for {result.request_id}, sending FormattedReportRequest to formatter")
+                # Create FormattedReportRequest and send to formatter
+                formatted_request = FormattedReportRequest(
+                    request_id=result.request_id,
+                    user_prompt=result.request.user_prompt,
+                    analysis=result.analysis,
+                    extracted_data=result.extracted_data
+                )
+                await ctx.send_message(formatted_request)
+            else:
+                # Not approved - send refined prompt string to executor
+                logger.info(f"Review not approved for {result.request_id}, sending refined prompt to executor")
+                refined_prompt = feedback.strip() if feedback else review_text.strip()
+                await ctx.send_message(refined_prompt.strip())
                 
         except Exception as e:
             logger.error(f"Error reviewing results: {e}", exc_info=True)
-            # Create fallback feedback
-            fallback_feedback = ReviewFeedback(
+            # On error, send to formatter as fallback
+            formatted_request = FormattedReportRequest(
                 request_id=result.request_id,
-                approved=False,
-                feedback=f"Review error: {str(e)}",
-                missing_steps=[]
+                user_prompt=result.request.user_prompt,
+                analysis=result.analysis,
+                extracted_data=result.extracted_data
             )
-            await ctx.send_message(fallback_feedback)
+            await ctx.send_message(formatted_request)
+
+
+class ReportFormatter(Executor):
+    """Report Formatter - Formats final report for user"""
+    
+    def __init__(self, agent_client: AzureAIAgentClient, thread_id: str, tools: List[Any] = None, middleware: List[Any] = None, event_handler=None):
+        super().__init__(id="formatter")
+        self._agent_client = agent_client
+        self._thread_id = thread_id
+        self._tools = tools or []
+        self._middleware = middleware or []
+        self._event_handler = event_handler
+        
+        # Create the actual agent
+        self._agent = self._create_agent()
+    
+    def _create_agent(self):
+        """Create the Azure AI agent for report formatting"""
+        logger.info(f"Creating report formatter agent with {len(self._tools)} tools: {[type(t).__name__ for t in self._tools]}")
+        return self._agent_client.create_agent(
+            model=getattr(self._agent_client, "model_deployment_name", None),
+            name="Report Formatter",
+            description="Formats final data analysis reports for users.",
+            instructions="""You are a helpful assistant that formats data analysis results into clear, readable reports for users.
+Format the report in a user-friendly way, making it easy to understand the results and any insights.
+Return only the formatted report text, nothing else.""",
+            tools=self._tools,
+            middleware=self._middleware,
+            conversation_id=self._thread_id,
+            temperature=0.1
+        )
+    
+    @handler
+    async def format_report(
+        self,
+        request: FormattedReportRequest,
+        ctx: WorkflowContext[str]
+    ) -> None:
+        """Formats the final report for the user."""
+        
+        logger.info(f"🔍 ReportFormatter.format_report called for request_id: {request.request_id}")
+        
+        try:
+            # Format the report
+            format_prompt = f"""Format a report for the user query:
+
+User Query: {request.user_prompt}
+
+Analysis Results:
+{request.analysis}
+
+Data:
+{request.extracted_data}
+
+Format this into a clear, readable report that answers the user's query. Make it user-friendly and easy to understand."""
+            
+            # Run the agent with run_stream and collect all text
+            formatted_report = await _collect_stream_text(self._agent, format_prompt)
+            
+            logger.info(f"Report formatted, collected {len(formatted_report)} chars")
+            
+            # Send formatted report (this will end the workflow)
+            await ctx.send_message(formatted_report.strip())
+            
+        except Exception as e:
+            logger.error(f"Error formatting report: {e}", exc_info=True)
+            # On error, send the analysis as fallback
+            fallback_report = f"Analysis Results:\n\n{request.analysis}"
+            await ctx.send_message(fallback_report)

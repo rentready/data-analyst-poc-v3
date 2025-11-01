@@ -111,6 +111,34 @@ class ReviewFeedback:
         )
 
 
+@dataclass
+class FormattedReportRequest:
+    """Request for formatting final report - contains user prompt and analysis result"""
+    request_id: str
+    user_prompt: str
+    analysis: str
+    extracted_data: str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "request_id": self.request_id,
+            "user_prompt": self.user_prompt,
+            "analysis": self.analysis,
+            "extracted_data": self.extracted_data
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FormattedReportRequest":
+        """Create from dictionary."""
+        return cls(
+            request_id=data["request_id"],
+            user_prompt=data["user_prompt"],
+            analysis=data["analysis"],
+            extracted_data=data.get("extracted_data", "")
+        )
+
+
 def generate_request_id() -> str:
     """Generate a unique request ID."""
     return str(uuid.uuid4())

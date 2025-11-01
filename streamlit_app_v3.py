@@ -39,8 +39,8 @@ class DataAnalystAppV3(DataAnalystApp):
             # Create thread manager
             thread_manager = ThreadManager(project_client)
             
-            # Create threads for four agents
-            agent_names = ["entity_extractor", "knowledge_base_searcher", "executor", "reviewer"]
+            # Create threads for five agents
+            agent_names = ["entity_extractor", "knowledge_base_searcher", "executor", "reviewer", "formatter"]
             threads = await thread_manager.get_all_threads(agent_names)
             
             # Create event handler

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from agent_framework import WorkflowBuilder, Executor, HostedMCPTool, HostedFileSearchTool, HostedVectorStoreContent
 from agent_framework.azure import AzureAIAgentClient
 
-from .executors import EntityExtractor, KnowledgeBaseSearcher, DataExecutorAgent, ReviewerExecutor
+from .executors import EntityExtractor, KnowledgeBaseSearcher, DataExecutorAgent, ReviewerExecutor, ReportFormatter
 from .models import DataExtractionRequest, ExecutionResult, ReviewFeedback
 
 logger = logging.getLogger(__name__)
@@ -194,24 +194,38 @@ class WorkflowBuilderV3:
             event_handler=self.event_handler
         )
         
+        # 5. Report Formatter - no tools needed
+        formatter_tools = []
+        logger.info(f"Report formatter tools: {[type(t).__name__ for t in formatter_tools]}")
+        
+        formatter = ReportFormatter(
+            agent_client=self.agent_client,
+            thread_id=self.threads["formatter"].id,
+            tools=formatter_tools,
+            middleware=self.middleware,
+            event_handler=self.event_handler
+        )
+        
         # Build workflow: entity_extractor -> knowledge_base_searcher -> executor -> reviewer
-        # If reviewer doesn't approve, go back to knowledge_base_searcher
+        # Reviewer routes to either executor (if not approved, sends str) or formatter (if approved, sends ExecutionResult)
         try:
-            logger.info("Creating workflow: entity_extractor -> knowledge_base_searcher -> executor -> reviewer (with feedback loop)")
+            logger.info("Creating workflow: entity_extractor -> knowledge_base_searcher -> executor -> reviewer -> (executor | formatter)")
             workflow = WorkflowBuilder()
             workflow.set_start_executor(entity_extractor)
             workflow.add_edge(entity_extractor, knowledge_base_searcher)
             workflow.add_edge(knowledge_base_searcher, executor)
             workflow.add_edge(executor, reviewer)
-            # Add feedback loop: reviewer can send feedback back to knowledge_base_searcher
-            workflow.add_edge(reviewer, knowledge_base_searcher)
+            # Reviewer can send either str (to executor) or ExecutionResult (to formatter)
+            # WorkflowBuilder will route based on message type
+            workflow.add_edge(reviewer, executor)  # For str messages (not approved)
+            workflow.add_edge(reviewer, formatter)  # For ExecutionResult messages (approved)
             workflow = workflow.build()
-            logger.info("✅ Four-step workflow with feedback loop built successfully")
+            logger.info("✅ Workflow built successfully with conditional routing from reviewer")
         except Exception as e:
             logger.error(f"❌ Workflow build failed: {e}")
             raise e
         
-        logger.info("✅ Workflow created with entity_extractor, knowledge_base_searcher, executor, and reviewer")
+        logger.info("✅ Workflow created with entity_extractor, knowledge_base_searcher, executor, reviewer, and formatter")
         return workflow
     
     async def run_workflow(self, user_query: str):
