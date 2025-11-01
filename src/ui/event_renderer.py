@@ -137,7 +137,16 @@ class EventRenderer:
     @staticmethod
     def render_streaming_text(container, text: str):
         """Отрендерить потоковый текст в контейнер"""
-        container.write(text)
+        # Check if text looks like JSON and render it nicely
+        if (text.strip().startswith('{') and text.strip().endswith('}')) or (text.strip().startswith('[') and text.strip().endswith(']')):
+            try:
+                parsed_json = json.loads(text.strip())
+                container.json(parsed_json)
+            except (json.JSONDecodeError, ValueError):
+                # If JSON parsing fails, render as regular text
+                container.write(text)
+        else:
+            container.write(text)
     
     # ===== Основной метод рендеринга =====
     
@@ -178,7 +187,17 @@ class EventRenderer:
         elif isinstance(event, (RunStep, MessageDeltaChunk)):
             self.render_runstep_event(event)
         elif isinstance(event, str):
-            st.write(event)
+            # Check if string looks like JSON and render it nicely
+            text = event.strip()
+            if (text.startswith('{') and text.endswith('}')) or (text.startswith('[') and text.endswith(']')):
+                try:
+                    parsed_json = json.loads(text)
+                    st.json(parsed_json)
+                except (json.JSONDecodeError, ValueError):
+                    # If JSON parsing fails, render as regular text
+                    st.write(event)
+            else:
+                st.write(event)
         else:
             logger.warning(f"Unknown event type: {type(event)}")
         
