@@ -18,6 +18,26 @@ class DataAnalystAppV3(DataAnalystApp):
         """Run the workflow using WorkflowBuilderV3."""
         self.spinner_manager.start("Creating analysis plan...")
         
+        # Initialize user messages collection if not exists
+        if "user_messages" not in st.session_state:
+            st.session_state.user_messages = []
+        
+        # Add current prompt to collection if it's new
+        if not st.session_state.user_messages or st.session_state.user_messages[-1] != prompt:
+            st.session_state.user_messages.append(prompt)
+        
+        # Combine all user messages
+        if len(st.session_state.user_messages) > 1:
+            messages_text = "\n\n".join([
+                f"User message {i+1}: {msg}" 
+                for i, msg in enumerate(st.session_state.user_messages)
+            ])
+            combined_prompt = f"User conversation history:\n{messages_text}"
+            logger.info(f"Combining {len(st.session_state.user_messages)} user messages")
+        else:
+            combined_prompt = prompt
+            logger.info(f"Using single message only")
+        
         # Get Azure configuration
         try:
             self.azure_endpoint = st.secrets["azure_ai_foundry"]["proj_endpoint"]
@@ -82,8 +102,8 @@ class DataAnalystAppV3(DataAnalystApp):
             )
             
             try:
-                # Run the workflow
-                await workflow_builder.run_workflow(prompt)
+                # Run the workflow with combined prompt
+                await workflow_builder.run_workflow(combined_prompt)
                     
             except Exception as e:
                 logger.error(f"Error running workflow: {e}", exc_info=True)
