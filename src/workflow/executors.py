@@ -2,6 +2,7 @@
 
 import logging
 import json
+import streamlit as st
 from typing import Dict, List, Any, Optional, Union
 
 from agent_framework import (
@@ -14,6 +15,8 @@ from agent_framework.azure import AzureAIAgentClient
 from .models import DataExtractionRequest, ExecutionResult, ReviewFeedback, EntityList, generate_request_id, FormattedReportRequest
 
 logger = logging.getLogger(__name__)
+
+MAX_ITERATIONS = 10
 
 
 
@@ -377,17 +380,26 @@ Return JSON with "approved" (boolean) and "feedback" (string) fields.
             # Run the agent with run_stream and collect all text
             review_text = await _collect_stream_text(self._agent, review_prompt)
             
-            # Try to parse JSON response
-            approved = False
-            feedback = ""
-            try:
-                review_json = json.loads(review_text.strip())
-                approved = review_json.get("approved", False)
-                feedback = review_json.get("feedback", "")
-            except (json.JSONDecodeError, ValueError):
-                # Fallback: check for "APPROVED" text
-                if "APPROVED" in review_text.upper() or review_text.strip().upper() == "APPROVED":
-                    approved = True
+            # Check iteration limit - force approve after MAX_ITERATIONS
+            total_iterations = (st.session_state.get("executor_iterations", 0) + 
+                               st.session_state.get("reviewer_iterations", 0))
+            
+            if total_iterations >= MAX_ITERATIONS:
+                logger.warning(f"⚠️ Maximum iterations ({MAX_ITERATIONS}) reached. Forcing approval.")
+                approved = True
+                feedback = "Maximum iterations reached. Approving result."
+            else:
+                # Try to parse JSON response
+                approved = False
+                feedback = ""
+                try:
+                    review_json = json.loads(review_text.strip())
+                    approved = review_json.get("approved", False)
+                    feedback = review_json.get("feedback", "")
+                except (json.JSONDecodeError, ValueError):
+                    # Fallback: check for "APPROVED" text
+                    if "APPROVED" in review_text.upper() or review_text.strip().upper() == "APPROVED":
+                        approved = True
             
             if approved:
                 logger.info(f"Review approved for {result.request_id}, sending FormattedReportRequest to formatter")

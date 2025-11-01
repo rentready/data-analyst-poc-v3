@@ -6,9 +6,12 @@
 """
 
 import logging
+import streamlit as st
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+MAX_ITERATIONS = 10
 
 
 class StreamlitEventHandler:
@@ -156,6 +159,20 @@ class StreamlitEventHandler:
         try:
             executor_id = getattr(event, 'executor_id', 'unknown')
             logger.info(f"Executor completed: {executor_id}")
+            
+            # Initialize iteration counters if not exists
+            if "executor_iterations" not in st.session_state:
+                st.session_state.executor_iterations = 0
+            if "reviewer_iterations" not in st.session_state:
+                st.session_state.reviewer_iterations = 0
+            
+            # Count iterations for executor and reviewer
+            if executor_id == "executor":
+                st.session_state.executor_iterations += 1
+                logger.info(f"Executor iterations: {st.session_state.executor_iterations}")
+            elif executor_id == "reviewer":
+                st.session_state.reviewer_iterations += 1
+                logger.info(f"Reviewer iterations: {st.session_state.reviewer_iterations}")
             
             if self.streaming_state.is_streaming(executor_id):
                 self.streaming_state.end_streaming(executor_id)

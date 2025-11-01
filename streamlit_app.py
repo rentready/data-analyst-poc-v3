@@ -22,6 +22,12 @@ class DataAnalystAppV3(DataAnalystApp):
         if "user_messages" not in st.session_state:
             st.session_state.user_messages = []
         
+        # Reset iteration counters for new conversation (if this is first message)
+        if not st.session_state.user_messages:
+            st.session_state.executor_iterations = 0
+            st.session_state.reviewer_iterations = 0
+            logger.info("Starting new conversation - resetting iteration counters")
+        
         # Add current prompt to collection if it's new
         if not st.session_state.user_messages or st.session_state.user_messages[-1] != prompt:
             st.session_state.user_messages.append(prompt)
