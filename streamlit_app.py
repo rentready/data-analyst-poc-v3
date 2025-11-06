@@ -52,11 +52,23 @@ class DataAnalystAppV3(DataAnalystApp):
             st.error("❌ Please configure your Azure AI Foundry settings in Streamlit secrets.")
             return
         
+        # Initialize Cosmos DB search tool
+        cosmosdb_search_tool = None
+        try:
+            from src.search_config import get_cosmosdb_search_client
+            from src.tools.search_cosmosdb_knowledge_base import CosmosDBKnowledgeBaseSearchTool
+            
+            cosmosdb_client = get_cosmosdb_search_client()
+            cosmosdb_search_tool = CosmosDBKnowledgeBaseSearchTool(cosmosdb_client)
+            logger.info("✅ Cosmos DB search tool initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Cosmos DB search tool not available: {e}")
+        
         # Use Azure AI Project client
         from azure.identity.aio import DefaultAzureCredential
         from azure.ai.projects.aio import AIProjectClient
         from src.ui.thread_manager import ThreadManager
-        from src.workflow.workflow_builder_v3 import WorkflowBuilderV3
+        from src.workflow.builder import WorkflowBuilder
         
         async with (
             DefaultAzureCredential() as credential,
@@ -65,8 +77,8 @@ class DataAnalystAppV3(DataAnalystApp):
             # Create thread manager
             thread_manager = ThreadManager(project_client)
             
-            # Create threads for five agents
-            agent_names = ["entity_extractor", "knowledge_base_searcher", "executor", "reviewer", "formatter"]
+            # Create threads for agents (orchestrator, data_planner, data_extractor)
+            agent_names = ["orchestrator", "data_planner", "data_extractor"]
             threads = await thread_manager.get_all_threads(agent_names)
             
             # Create event handler
@@ -96,20 +108,55 @@ class DataAnalystAppV3(DataAnalystApp):
             except KeyError:
                 logger.warning("⚠️ Vector store ID not found - knowledge base tool will not be available")
             
-            # Create workflow builder - all tools are created inside builder
-            workflow_builder = WorkflowBuilderV3(
+            # Create MCP tools
+            mcp_tools = []
+            if mcp_config:
+                try:
+                    from src.credentials import get_mcp_token_sync
+                    from agent_framework import HostedMCPTool
+                    
+                    mcp_token = get_mcp_token_sync({
+                        "mcp_client_id": mcp_config["client_id"],
+                        "mcp_client_secret": mcp_config["client_secret"],
+                        "AZURE_TENANT_ID": mcp_config["tenant_id"]
+                    })
+                    
+                    mcp_tool = HostedMCPTool(
+                        name="rentready_mcp",
+                        description="Rent Ready MCP tool",
+                        url=mcp_config["url"],
+                        approval_mode="never_require",
+                        allowed_tools=mcp_config.get("allowed_tools", []),
+                        headers={"Authorization": f"Bearer {mcp_token}"} if mcp_token else {},
+                    )
+                    
+                    mcp_tools.append(mcp_tool)
+                    logger.info(f"✅ MCP tool created successfully")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error creating MCP tool: {e}")
+            
+            # Create workflow builder
+            workflow_builder = WorkflowBuilder(
                 project_client=project_client,
                 model=self.model_name,
-                threads=threads,
-                mcp_config=mcp_config,
-                vector_store_id=vector_store_id,
                 middleware=middleware,
-                event_handler=event_handler
+                tools=mcp_tools,
+                spinner_manager=self.spinner_manager,
+                event_handler=event_handler,
+                cosmosdb_search_tool=cosmosdb_search_tool
             )
             
             try:
-                # Run the workflow with combined prompt
-                await workflow_builder.run_workflow(combined_prompt)
+                # Build and run the workflow with combined prompt
+                from src.workflow.builder import on_orchestrator_event
+                
+                workflow = await workflow_builder.build_workflow(threads, combined_prompt)
+                
+                # Run workflow with event callback
+                result = await workflow.arun(
+                    lambda event: on_orchestrator_event(event, event_handler)
+                )
                     
             except Exception as e:
                 logger.error(f"Error running workflow: {e}", exc_info=True)

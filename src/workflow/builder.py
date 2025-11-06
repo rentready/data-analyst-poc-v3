@@ -3,12 +3,10 @@
 from agent_framework import (
     MagenticBuilder,
     MagenticOrchestratorMessageEvent,
-    MagenticFinalResultEvent,
-    HostedFileSearchTool,
-    HostedVectorStoreContent
+    MagenticFinalResultEvent
 )
-import streamlit as st
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +34,18 @@ Your job:
 DATA_PLANNER_INSTRUCTIONS = """You are the Data Research specialist. Your job is to investigate the data and choose the best approach:
 
 1. Analyze the user request to understand what data is needed
-2. Search the knowledge base for business terms and table definitions
-3. Use MCP tools to explore the database schema and sample real data
-4. Find specific entities (IDs, names, values) by testing different approaches:
+2. **ALWAYS use File Search tool to search for business terms and definitions in uploaded documentation**
+3. **ALWAYS use search_cosmosdb_accounts() to find company and property names before querying the database**
+4. Use MCP tools to explore the database schema and sample real data
+5. Find specific entities (IDs, names, values) by testing different approaches:
    - Try exact match first (WHERE name = 'value')
    - If not found, try partial match (WHERE name LIKE '%value%')
    - If still not found, try similar names
-5. Test different SQL approaches and see which works best
-6. Choose the optimal data extraction strategy based on real data exploration
-7. Provide a clear plan with validated approach to the Data Extractor
+6. Test different SQL approaches and see which works best
+7. Choose the optimal data extraction strategy based on real data exploration
+8. Provide a clear plan with validated approach to the Data Extractor
 
-Your role: Research and plan. Let the Data Extractor execute the solution."""
+Your role: Research and plan. You MUST use search tools before making assumptions. Let the Data Extractor execute the solution."""
 
 DATA_PLANNER_DESCRIPTION = "Researches data, explores database schema, tests different approaches, and chooses the best data extraction strategy."
 
@@ -83,7 +82,7 @@ async def on_orchestrator_event(event: MagenticOrchestratorMessageEvent, event_h
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler):
+    def __init__(self, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler, cosmosdb_search_tool=None):
         """
         Initialize workflow builder.
         
@@ -94,6 +93,7 @@ class WorkflowBuilder:
             tools: List of tools available to agents
             spinner_manager: Spinner manager instance
             event_handler: Unified event handler instance
+            cosmosdb_search_tool: Optional Cosmos DB search tool
         """
         self.project_client = project_client
         self.model = model
@@ -101,6 +101,7 @@ class WorkflowBuilder:
         self.tools = tools
         self.spinner_manager = spinner_manager
         self.event_handler = event_handler
+        self.cosmosdb_search_tool = cosmosdb_search_tool
     
     async def build_workflow(self, threads: dict, prompt: str):
         """
@@ -122,9 +123,84 @@ class WorkflowBuilder:
             thread_id=threads["orchestrator"].id
         )
         
-        # Create file search tool for knowledge base
-        vector_store_id = st.secrets['vector_store_id']
-        file_search_tool = HostedFileSearchTool(inputs=[HostedVectorStoreContent(vector_store_id=vector_store_id)])
+        # Create Azure AI Search tool for uploaded files (synchronous wrapper)
+        kb_file_tools = []
+        try:
+            from src.search_config import get_file_search_client, get_embeddings_generator
+            from src.tools.search_knowledge_base import KnowledgeBaseSearchTool
+            
+            file_search_client = get_file_search_client()
+            embeddings_gen = get_embeddings_generator()
+            kb_file_search_tool = KnowledgeBaseSearchTool(file_search_client, embeddings_gen)
+            
+            def search_knowledge_base(query: str, top_k: int = 5) -> str:
+                """
+                Search knowledge base (uploaded documents) using hybrid search.
+                Use this to find information in uploaded documentation files.
+
+                Args:
+                    query: Search query
+                    top_k: Number of results to return (default: 5)
+
+                Returns:
+                    Formatted search results
+                """
+                try:
+                    # Create new event loop for async operation
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        logger.info(f"🔍 KB File Search Tool called: query='{query}', top_k={top_k}")
+                        results = loop.run_until_complete(
+                            kb_file_search_tool.search_and_format(query, top_k)
+                        )
+                        logger.info(f"✅ KB File Search successful: {len(results)} characters returned")
+                        return results
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"❌ Error in search_knowledge_base: {e}", exc_info=True)
+                    return f"Error searching knowledge base: {str(e)}"
+            
+            kb_file_tools.append(search_knowledge_base)
+            logger.info("✅ Knowledge base file search tool added to Data Planner agent")
+        except Exception as e:
+            logger.warning(f"⚠️ Knowledge base file search tool not available: {e}")
+
+        # Create Cosmos DB search function (synchronous wrapper for async search)
+        additional_tools = []
+        if self.cosmosdb_search_tool:
+            def search_cosmosdb_accounts(query: str, top_k: int = 10) -> str:
+                """
+                Search for company and property names in Cosmos DB using Azure AI Search.
+                Use this to find management companies and properties by name.
+                
+                Args:
+                    query: Company or property name to search for
+                    top_k: Number of results to return (default: 10)
+                    
+                Returns:
+                    Formatted search results with account details
+                """
+                try:
+                    # Create new event loop for async operation
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        logger.info(f"🔍 Cosmos DB Search Tool called: query='{query}', top_k={top_k}")
+                        results = loop.run_until_complete(
+                            self.cosmosdb_search_tool.search_and_format(query, top_k)
+                        )
+                        logger.info(f"✅ Cosmos DB Search successful: {len(results)} characters returned")
+                        return results
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"❌ Error in search_cosmosdb_accounts: {e}", exc_info=True)
+                    return f"Error searching Cosmos DB: {str(e)}"
+            
+            additional_tools.append(search_cosmosdb_accounts)
+            logger.info("✅ Cosmos DB search tool added to Data Planner agent")
 
         # Create Data Planner agent (combines knowledge base + facts identification + SQL building)
         data_planner_instructions = f"""For the user request: {prompt}
@@ -139,7 +215,7 @@ You will justify what tools you are going to use before requesting them."""
             description=DATA_PLANNER_DESCRIPTION,
             instructions=data_planner_instructions,
             middleware=self.middleware,
-            tools=self.tools + [file_search_tool],
+            tools=self.tools + kb_file_tools + additional_tools,
             conversation_id=threads["data_planner"].id,
             temperature=0.1,
             additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
@@ -152,13 +228,13 @@ You will justify what tools you are going to use before requesting them."""
             description=DATA_EXTRACTOR_DESCRIPTION,
             instructions=DATA_EXTRACTOR_INSTRUCTIONS,
             middleware=self.middleware,
-            tools=self.tools + [file_search_tool],
+            tools=self.tools + kb_file_tools,
             conversation_id=threads["data_extractor"].id,
             temperature=0.1,
             additional_instructions="Use MCP tools to explore database, build and execute SQL queries. Handle errors by trying different approaches. Present results clearly."
         )
         
-        logger.info(f"✅ Data Planner Agent created with vector_store_id: {vector_store_id[:20]}...")
+        logger.info(f"✅ Data Planner Agent created with Azure AI Search")
         logger.info(f"✅ Data Extractor Agent created")
 
         # Build workflow with only two agents
