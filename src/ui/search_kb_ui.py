@@ -19,7 +19,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
         indexer: Document indexer instance
     """
     with st.sidebar:
-        st.header('≡ƒôÜ Knowledge Base')
+        st.header('📚 Knowledge Base')
         
         try:
             # Get index statistics
@@ -60,7 +60,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                         st.rerun()
                 
                 with expander:
-                    st.info('≡ƒÆí Files are indexed and searchable via hybrid search.')
+                    st.info('✅ Files are indexed and searchable via hybrid search.')
                     
                     for file_info in files:
                         filename = file_info['filename']
@@ -78,7 +78,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                                 if content_key in st.session_state:
                                     # File is pre-loaded, show download button
                                     st.download_button(
-                                        label='Γ¼ç∩╕Å Download',
+                                        label='📥 Download',
                                         data=st.session_state[content_key],
                                         file_name=filename,
                                         mime='text/plain',
@@ -87,10 +87,10 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                                     )
                                 else:
                                     # File not loaded yet (shouldn't happen after pre-load)
-                                    st.button('ΓÅ│ Loading...', key=f'dl_disabled_{filename}', disabled=True, use_container_width=True)
+                                    st.button('⏳ Loading...', key=f'dl_disabled_{filename}', disabled=True, use_container_width=True)
                             
                             with col2:
-                                if st.button('≡ƒùæ∩╕Å Delete', key=f"delete_{filename}", use_container_width=True):
+                                if st.button('🗑️ Delete', key=f"delete_{filename}", use_container_width=True):
                                     try:
                                         result = run_async(indexer.delete_document_by_filename(filename))
                                         if result['success']:
@@ -130,7 +130,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
             help='Method for splitting documents into chunks'
         )
         
-        if uploaded_files and st.button('≡ƒôñ Upload & Index', type='primary'):
+        if uploaded_files and st.button('📤 Upload & Index', type='primary'):
             progress_bar = st.progress(0)
             status_text = st.empty()
             
@@ -173,21 +173,21 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
             progress_bar.empty()
             
             if upload_success:
-                st.success('Γ£à Upload complete!')
+                st.success('✅ Upload complete!')
                 for msg in upload_success:
-                    st.success(f'  ΓÇó {msg}')
+                    st.success(f'  • {msg}')
             
             if upload_errors:
-                st.error('Γ¥î Errors occurred:')
+                st.error('❌ Errors occurred:')
                 for error in upload_errors:
-                    st.error(f'  ΓÇó {error}')
+                    st.error(f'  • {error}')
             
             st.rerun()
         
         st.divider()
         
         # Search configuration
-        with st.expander('ΓÜÖ∩╕Å Search Settings', expanded=False):
+        with st.expander('⚙️🔍 Search Settings', expanded=False):
             st.caption('Azure AI Search Configuration')
             st.text(f'Index: {indexer.index_name}')
             st.text(f'Endpoint: {indexer.search_endpoint[:50]}...')
@@ -197,7 +197,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
 
 def render_search_test_ui():
     """Render search test interface for debugging."""
-    st.subheader('≡ƒöì Test Knowledge Base Search')
+    st.subheader('🔬 Test Knowledge Base Search')
     
     query = st.text_input('Enter search query:', placeholder='e.g., What is DSAT?')
     

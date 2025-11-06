@@ -104,6 +104,33 @@ class DataAnalystApp:
         """Render the main UI components."""
         st.title("🤖 Data Analyst Chat")
         
+        # Render Knowledge Base UI in sidebar
+        with st.sidebar:
+            st.markdown("---")
+            try:
+                from src.ui.search_kb_ui import render_knowledge_base_sidebar
+                from src.search.indexer import DocumentIndexer
+                from src.search_config import get_embeddings_generator
+                
+                # Get configuration from secrets
+                search_endpoint = st.secrets["azure_search"]["endpoint"]
+                index_name = st.secrets["azure_search"]["index_name"]
+                api_key = st.secrets["azure_search"]["admin_key"]
+                
+                # Initialize embeddings and indexer
+                embeddings = get_embeddings_generator()
+                indexer = DocumentIndexer(
+                    search_endpoint=search_endpoint,
+                    index_name=index_name,
+                    api_key=api_key,
+                    embeddings_generator=embeddings
+                )
+                
+                # Render KB UI
+                render_knowledge_base_sidebar(indexer)
+            except Exception as e:
+                logger.warning(f"⚠️ Knowledge Base UI not available: {e}")
+        
         # Initialize session state
         if "messages" not in st.session_state:
             st.session_state.messages = []

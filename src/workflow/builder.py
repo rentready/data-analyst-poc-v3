@@ -17,15 +17,21 @@ WORKFLOW:
 1. data_planner - Research data, explore database, test approaches, choose best strategy
 2. data_extractor - Execute the solution, build SQL, handle errors, present results
 
+CRITICAL RULE - KNOWLEDGE BASE SEARCH:
+- If the request contains ANY unknown terms, abbreviations, company names, or business concepts
+- You MUST route to data_planner FIRST to search the knowledge base
+- data_planner has access to search_knowledge_base() tool to find definitions and information
+- NEVER try to answer questions about business terms yourself - ALWAYS delegate to data_planner
+
 DECISION LOGIC:
-- For most requests: Use data_planner first to research and plan, then data_extractor to execute
-- For simple requests: data_extractor can work directly
-- data_planner focuses on research and planning
-- data_extractor focuses on execution and problem-solving
+- Unknown terms or concepts? -> data_planner FIRST (to search knowledge base)
+- Need to find companies/properties? -> data_planner FIRST (to search Cosmos DB)
+- Need database query? -> data_planner first to research, then data_extractor to execute
+- For simple SQL requests with known entities: data_extractor can work directly
 
 Your job:
 - Route requests to the appropriate specialist(s)
-- Let data_planner research and plan when needed
+- Let data_planner research terms and plan when needed
 - Let data_extractor execute and solve problems
 - Coordinate between them when both are needed
 """
@@ -123,84 +129,49 @@ class WorkflowBuilder:
             thread_id=threads["orchestrator"].id
         )
         
-        # Create Azure AI Search tool for uploaded files (synchronous wrapper)
-        kb_file_tools = []
+        # Create Azure AI Search tool as an annotated function (this is what works!)
+        kb_tools = []
         try:
-            from src.search_config import get_file_search_client, get_embeddings_generator
-            from src.tools.search_knowledge_base import KnowledgeBaseSearchTool
+            from src.search_config import get_file_search_client, get_embeddings_generator, get_cosmosdb_search_client
+            from src.tools.azure_search_tool import create_azure_search_tool
             
             file_search_client = get_file_search_client()
             embeddings_gen = get_embeddings_generator()
-            kb_file_search_tool = KnowledgeBaseSearchTool(file_search_client, embeddings_gen)
+            cosmosdb_client = get_cosmosdb_search_client()
             
-            def search_knowledge_base(query: str, top_k: int = 5) -> str:
-                """
-                Search knowledge base (uploaded documents) using hybrid search.
-                Use this to find information in uploaded documentation files.
-
-                Args:
-                    query: Search query
-                    top_k: Number of results to return (default: 5)
-
-                Returns:
-                    Formatted search results
-                """
-                try:
-                    # Create new event loop for async operation
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        logger.info(f"🔍 KB File Search Tool called: query='{query}', top_k={top_k}")
-                        results = loop.run_until_complete(
-                            kb_file_search_tool.search_and_format(query, top_k)
-                        )
-                        logger.info(f"✅ KB File Search successful: {len(results)} characters returned")
-                        return results
-                    finally:
-                        loop.close()
-                except Exception as e:
-                    logger.error(f"❌ Error in search_knowledge_base: {e}", exc_info=True)
-                    return f"Error searching knowledge base: {str(e)}"
+            # Create custom tool instance
+            azure_search_tool_instance = create_azure_search_tool(
+                file_search_client,
+                cosmosdb_client,
+                embeddings_gen
+            )
             
-            kb_file_tools.append(search_knowledge_base)
-            logger.info("✅ Knowledge base file search tool added to Data Planner agent")
-        except Exception as e:
-            logger.warning(f"⚠️ Knowledge base file search tool not available: {e}")
-
-        # Create Cosmos DB search function (synchronous wrapper for async search)
-        additional_tools = []
-        if self.cosmosdb_search_tool:
-            def search_cosmosdb_accounts(query: str, top_k: int = 10) -> str:
+            # Create annotated wrapper function for Azure AI Agent Framework
+            def search_knowledge_base(query: str, search_type: str = "both", top_k: int = 5) -> str:
                 """
-                Search for company and property names in Cosmos DB using Azure AI Search.
-                Use this to find management companies and properties by name.
+                Search for information in the knowledge base using Azure AI Search.
+                Use this tool to find business terms, definitions, company names, property information, and any other data.
+                Searches both uploaded documents and Cosmos DB account/company data.
                 
                 Args:
-                    query: Company or property name to search for
-                    top_k: Number of results to return (default: 10)
+                    query: The search query - term, company name, or question to search for
+                    search_type: Where to search - 'files' for documents, 'cosmosdb' for accounts, 'both' for everything (default: 'both')
+                    top_k: Number of results to return (default: 5)
                     
                 Returns:
-                    Formatted search results with account details
+                    Formatted search results from knowledge base
                 """
-                try:
-                    # Create new event loop for async operation
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        logger.info(f"🔍 Cosmos DB Search Tool called: query='{query}', top_k={top_k}")
-                        results = loop.run_until_complete(
-                            self.cosmosdb_search_tool.search_and_format(query, top_k)
-                        )
-                        logger.info(f"✅ Cosmos DB Search successful: {len(results)} characters returned")
-                        return results
-                    finally:
-                        loop.close()
-                except Exception as e:
-                    logger.error(f"❌ Error in search_cosmosdb_accounts: {e}", exc_info=True)
-                    return f"Error searching Cosmos DB: {str(e)}"
+                logger.info(f"🔍 KB Tool called: query='{query}', type='{search_type}', top_k={top_k}")
+                result = azure_search_tool_instance.execute(query, search_type, top_k)
+                logger.info(f"✅ KB Tool completed: {len(result)} characters returned")
+                return result
             
-            additional_tools.append(search_cosmosdb_accounts)
-            logger.info("✅ Cosmos DB search tool added to Data Planner agent")
+            kb_tools.append(search_knowledge_base)
+            logger.info("✅ Azure Search Tool (search_knowledge_base) registered successfully")
+            logger.info("   Will search: uploaded files + Cosmos DB accounts")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Azure Search tool not available: {e}")
 
         # Create Data Planner agent (combines knowledge base + facts identification + SQL building)
         data_planner_instructions = f"""For the user request: {prompt}
@@ -215,7 +186,7 @@ You will justify what tools you are going to use before requesting them."""
             description=DATA_PLANNER_DESCRIPTION,
             instructions=data_planner_instructions,
             middleware=self.middleware,
-            tools=self.tools + kb_file_tools + additional_tools,
+            tools=self.tools + kb_tools,
             conversation_id=threads["data_planner"].id,
             temperature=0.1,
             additional_instructions="Annotate what you want before using MCP Tools. Always use MCP Tools before returning response. Use MCP Tools to identify tables and fields. Ensure that you found requested rows by sampling data using SELECT TOP 1 [fields] FROM [table]. Never generate anything on your own."
@@ -228,7 +199,7 @@ You will justify what tools you are going to use before requesting them."""
             description=DATA_EXTRACTOR_DESCRIPTION,
             instructions=DATA_EXTRACTOR_INSTRUCTIONS,
             middleware=self.middleware,
-            tools=self.tools + kb_file_tools,
+            tools=self.tools + kb_tools,
             conversation_id=threads["data_extractor"].id,
             temperature=0.1,
             additional_instructions="Use MCP tools to explore database, build and execute SQL queries. Handle errors by trying different approaches. Present results clearly."
