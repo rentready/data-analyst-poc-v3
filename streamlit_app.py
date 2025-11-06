@@ -149,14 +149,10 @@ class DataAnalystAppV3(DataAnalystApp):
             
             try:
                 # Build and run the workflow with combined prompt
-                from src.workflow.builder import on_orchestrator_event
-                
                 workflow = await workflow_builder.build_workflow(threads, combined_prompt)
                 
-                # Run workflow with event callback
-                result = await workflow.arun(
-                    lambda event: on_orchestrator_event(event, event_handler)
-                )
+                # Run workflow with the prompt (not lambda)
+                result = await workflow.run(combined_prompt)
                     
             except Exception as e:
                 logger.error(f"Error running workflow: {e}", exc_info=True)
