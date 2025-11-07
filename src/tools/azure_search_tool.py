@@ -12,20 +12,22 @@ class AzureSearchTool:
     This tool is designed to be compatible with Azure AI Agents function calling.
     """
     
-    def __init__(self, file_search_client, cosmosdb_search_client, embeddings_generator):
+    def __init__(self, file_search_client, management_companies_client, properties_client, embeddings_generator):
         """
         Initialize the Azure Search Tool.
         
         Args:
             file_search_client: SearchClient for file-based knowledge base
-            cosmosdb_search_client: SearchClient for Cosmos DB knowledge base
+            management_companies_client: SearchClient for management companies index
+            properties_client: SearchClient for properties index
             embeddings_generator: EmbeddingsGenerator instance
         """
         self.file_search_client = file_search_client
-        self.cosmosdb_search_client = cosmosdb_search_client
+        self.management_companies_client = management_companies_client
+        self.properties_client = properties_client
         self.embeddings_generator = embeddings_generator
         
-        logger.info("AzureSearchTool initialized")
+        logger.info("AzureSearchTool initialized with 3 indexes")
     
     def get_tool_definition(self) -> Dict[str, Any]:
         """
@@ -38,21 +40,21 @@ class AzureSearchTool:
                 "name": "search_knowledge_base",
                 "description": (
                     "Search for information in the knowledge base. "
-                    "Use this to find business terms, definitions, company names, and property information. "
-                    "Searches both uploaded documents and Cosmos DB account data."
+                    "Use this to find business terms, definitions, management companies, and properties. "
+                    "Searches uploaded documents, management companies, and properties."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query - term, company name, or question to search for"
+                            "description": "The search query - term, company name, property name, or question"
                         },
                         "search_type": {
                             "type": "string",
-                            "enum": ["files", "cosmosdb", "both"],
-                            "description": "Where to search: 'files' for documents, 'cosmosdb' for accounts, 'both' for everything",
-                            "default": "both"
+                            "enum": ["files", "management_companies", "properties", "all"],
+                            "description": "Where to search: 'files' for documents, 'management_companies' for companies, 'properties' for properties, 'all' for everything",
+                            "default": "all"
                         },
                         "top_k": {
                             "type": "integer",
@@ -96,29 +98,91 @@ class AzureSearchTool:
             logger.error(f"Error searching files: {e}", exc_info=True)
             return f"Error searching files: {str(e)}"
     
-    async def _search_cosmosdb(self, query: str, top_k: int = 10) -> str:
-        """Search in Cosmos DB knowledge base."""
-        if not self.cosmosdb_search_client:
-            return "Cosmos DB search not available"
+    async def _search_management_companies(self, query: str, top_k: int = 5) -> str:
+        """Search in management companies index using keyword search."""
+        if not self.management_companies_client:
+            return "Management companies search not available"
         
         try:
-            from src.tools.search_cosmosdb_knowledge_base import CosmosDBKnowledgeBaseSearchTool
+            logger.info(f"Searching management companies: '{query}'")
             
-            cosmosdb_tool = CosmosDBKnowledgeBaseSearchTool(
-                self.cosmosdb_search_client
+            results = await self.management_companies_client.search(
+                query=query,
+                search_type="keyword",
+                top_k=top_k
             )
             
-            results = await cosmosdb_tool.search_and_format(query, top_k)
-            return results
+            if not results:
+                return "No management companies found."
+            
+            formatted_results = []
+            for i, result in enumerate(results, 1):
+                name = result.get('name', 'Unknown')
+                city = result.get('address1_city', '')
+                state = result.get('address1_stateorprovince', '')
+                account_number = result.get('accountnumber', '')
+                
+                location = f"{city}, {state}" if city and state else city or state or "N/A"
+                formatted_results.append(
+                    f"Result {i}: {name} (#{account_number})\n"
+                    f"Type: Management Company\n"
+                    f"Location: {location}\n"
+                )
+            
+            logger.info(f"Found {len(results)} management companies")
+            return "\n".join(formatted_results)
             
         except Exception as e:
-            logger.error(f"Error searching Cosmos DB: {e}", exc_info=True)
-            return f"Error searching Cosmos DB: {str(e)}"
+            logger.error(f"Error searching management companies: {e}", exc_info=True)
+            return f"Error searching management companies: {str(e)}"
+    
+    async def _search_properties(self, query: str, top_k: int = 10) -> str:
+        """Search in properties index using keyword search."""
+        if not self.properties_client:
+            return "Properties search not available"
+        
+        try:
+            logger.info(f"Searching properties: '{query}'")
+            
+            results = await self.properties_client.search(
+                query=query,
+                search_type="keyword",
+                top_k=top_k
+            )
+            
+            if not results:
+                return "No properties found."
+            
+            formatted_results = []
+            for i, result in enumerate(results, 1):
+                name = result.get('name', 'Unknown')
+                city = result.get('address1_city', '')
+                state = result.get('address1_stateorprovince', '')
+                account_number = result.get('accountnumber', '')
+                parent_account = result.get('parentaccountid', '')
+                
+                location = f"{city}, {state}" if city and state else city or state or "N/A"
+                formatted_results.append(
+                    f"Result {i}: {name} (#{account_number})\n"
+                    f"Type: Property\n"
+                    f"Location: {location}\n"
+                )
+                
+                # Optionally include parent account ID for reference
+                if parent_account:
+                    formatted_results[-1] += f"Parent Account ID: {parent_account}\n"
+            
+            logger.info(f"Found {len(results)} properties")
+            return "\n".join(formatted_results)
+            
+        except Exception as e:
+            logger.error(f"Error searching properties: {e}", exc_info=True)
+            return f"Error searching properties: {str(e)}"
     
     async def execute_async(
         self,
         query: str,
-        search_type: str = "both",
+        search_type: str = "all",
         top_k: int = 5
     ) -> str:
         """
@@ -126,7 +190,7 @@ class AzureSearchTool:
         
         Args:
             query: Search query
-            search_type: Where to search ('files', 'cosmosdb', or 'both')
+            search_type: Where to search ('files', 'management_companies', 'properties', or 'all')
             top_k: Number of results
             
         Returns:
@@ -136,15 +200,20 @@ class AzureSearchTool:
         
         results = []
         
-        if search_type in ["files", "both"]:
+        if search_type in ["files", "all"]:
             file_results = await self._search_files(query, top_k)
-            if file_results and "Error" not in file_results:
+            if file_results and "Error" not in file_results and "No results" not in file_results:
                 results.append(f"=== DOCUMENTS ===\n{file_results}")
         
-        if search_type in ["cosmosdb", "both"]:
-            cosmosdb_results = await self._search_cosmosdb(query, top_k)
-            if cosmosdb_results and "Error" not in cosmosdb_results:
-                results.append(f"=== ACCOUNTS (Companies/Properties) ===\n{cosmosdb_results}")
+        if search_type in ["management_companies", "all"]:
+            mgmt_results = await self._search_management_companies(query, top_k)
+            if mgmt_results and "Error" not in mgmt_results and "No management" not in mgmt_results:
+                results.append(f"=== MANAGEMENT COMPANIES ===\n{mgmt_results}")
+        
+        if search_type in ["properties", "all"]:
+            prop_results = await self._search_properties(query, top_k * 2)  # More results for properties
+            if prop_results and "Error" not in prop_results and "No properties" not in prop_results:
+                results.append(f"=== PROPERTIES ===\n{prop_results}")
         
         if not results:
             return "No relevant information found in the knowledge base."
@@ -154,7 +223,7 @@ class AzureSearchTool:
         
         return combined_results
     
-    def execute(self, query: str, search_type: str = "both", top_k: int = 5) -> str:
+    def execute(self, query: str, search_type: str = "all", top_k: int = 5) -> str:
         """
         Synchronous wrapper for execute_async.
         This is the method that will be called by Azure AI Agent Framework.
@@ -186,7 +255,8 @@ class AzureSearchTool:
 
 def create_azure_search_tool(
     file_search_client,
-    cosmosdb_search_client,
+    management_companies_client,
+    properties_client,
     embeddings_generator
 ) -> AzureSearchTool:
     """
@@ -194,7 +264,8 @@ def create_azure_search_tool(
     
     Args:
         file_search_client: SearchClient for file-based KB
-        cosmosdb_search_client: SearchClient for Cosmos DB KB
+        management_companies_client: SearchClient for management companies
+        properties_client: SearchClient for properties
         embeddings_generator: EmbeddingsGenerator instance
         
     Returns:
@@ -202,7 +273,8 @@ def create_azure_search_tool(
     """
     return AzureSearchTool(
         file_search_client,
-        cosmosdb_search_client,
+        management_companies_client,
+        properties_client,
         embeddings_generator
     )
 

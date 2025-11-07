@@ -40,18 +40,22 @@ Your job:
 DATA_PLANNER_INSTRUCTIONS = """You are the Data Research specialist. Your job is to investigate the data and choose the best approach:
 
 1. Analyze the user request to understand what data is needed
-2. **ALWAYS use File Search tool to search for business terms and definitions in uploaded documentation**
-3. **ALWAYS use search_cosmosdb_accounts() to find company and property names before querying the database**
-4. Use MCP tools to explore the database schema and sample real data
-5. Find specific entities (IDs, names, values) by testing different approaches:
+2. **ALWAYS use search_knowledge_base() to search for business terms, definitions, company names, and property names**
+   - This tool searches uploaded documents, management companies index, and properties index
+   - Use search_type='all' to search everywhere (default)
+   - Use search_type='management_companies' to search only management companies
+   - Use search_type='properties' to search only properties
+   - Use search_type='files' to search only uploaded documentation
+3. Use MCP tools to explore the database schema and sample real data
+4. Find specific entities (IDs, names, values) by testing different approaches:
    - Try exact match first (WHERE name = 'value')
    - If not found, try partial match (WHERE name LIKE '%value%')
    - If still not found, try similar names
-6. Test different SQL approaches and see which works best
-7. Choose the optimal data extraction strategy based on real data exploration
-8. Provide a clear plan with validated approach to the Data Extractor
+5. Test different SQL approaches and see which works best
+6. Choose the optimal data extraction strategy based on real data exploration
+7. Provide a clear plan with validated approach to the Data Extractor
 
-Your role: Research and plan. You MUST use search tools before making assumptions. Let the Data Extractor execute the solution."""
+Your role: Research and plan. You MUST use search_knowledge_base() before making assumptions. Let the Data Extractor execute the solution."""
 
 DATA_PLANNER_DESCRIPTION = "Researches data, explores database schema, tests different approaches, and chooses the best data extraction strategy."
 
@@ -132,30 +136,46 @@ class WorkflowBuilder:
         # Create Azure AI Search tool as an annotated function (this is what works!)
         kb_tools = []
         try:
-            from src.search_config import get_file_search_client, get_embeddings_generator, get_cosmosdb_search_client
+            from src.search_config import get_file_search_client, get_embeddings_generator
+            from src.search.client import SearchClient
             from src.tools.azure_search_tool import create_azure_search_tool
+            import streamlit as st
             
             file_search_client = get_file_search_client()
             embeddings_gen = get_embeddings_generator()
-            cosmosdb_client = get_cosmosdb_search_client()
+            
+            # Create SearchClient for management companies
+            management_companies_client = SearchClient(
+                service_name=st.secrets["azure_search"]["service_name"],
+                index_name=st.secrets["azure_search"]["management_companies_index_name"],
+                api_key=st.secrets["azure_search"]["admin_key"]
+            )
+            
+            # Create SearchClient for properties
+            properties_client = SearchClient(
+                service_name=st.secrets["azure_search"]["service_name"],
+                index_name=st.secrets["azure_search"]["properties_index_name"],
+                api_key=st.secrets["azure_search"]["admin_key"]
+            )
             
             # Create custom tool instance
             azure_search_tool_instance = create_azure_search_tool(
                 file_search_client,
-                cosmosdb_client,
+                management_companies_client,
+                properties_client,
                 embeddings_gen
             )
             
             # Create annotated wrapper function for Azure AI Agent Framework
-            def search_knowledge_base(query: str, search_type: str = "both", top_k: int = 5) -> str:
+            def search_knowledge_base(query: str, search_type: str = "all", top_k: int = 5) -> str:
                 """
                 Search for information in the knowledge base using Azure AI Search.
-                Use this tool to find business terms, definitions, company names, property information, and any other data.
-                Searches both uploaded documents and Cosmos DB account/company data.
+                Use this tool to find business terms, definitions, management companies, properties, and any other data.
+                Searches uploaded documents, management companies, and properties.
                 
                 Args:
-                    query: The search query - term, company name, or question to search for
-                    search_type: Where to search - 'files' for documents, 'cosmosdb' for accounts, 'both' for everything (default: 'both')
+                    query: The search query - term, company name, property name, or question
+                    search_type: Where to search - 'files' for documents, 'management_companies' for companies, 'properties' for properties, 'all' for everything (default: 'all')
                     top_k: Number of results to return (default: 5)
                     
                 Returns:
@@ -168,7 +188,7 @@ class WorkflowBuilder:
             
             kb_tools.append(search_knowledge_base)
             logger.info("✅ Azure Search Tool (search_knowledge_base) registered successfully")
-            logger.info("   Will search: uploaded files + Cosmos DB accounts")
+            logger.info("   Will search: uploaded files + management companies + properties")
             
         except Exception as e:
             logger.warning(f"⚠️ Azure Search tool not available: {e}")
