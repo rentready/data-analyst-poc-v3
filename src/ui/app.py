@@ -39,6 +39,22 @@ class DataAnalystApp:
     
     def initialize(self) -> None:
         """Initialize application: config, auth, MCP, session state."""
+        # Reset search config singletons to reload configuration
+        from src.search_config import reset_singletons
+        reset_singletons()
+        
+        # Log embeddings configuration for debugging
+        try:
+            emb_config = st.secrets.get("embeddings", {})
+            logger.info("=" * 80)
+            logger.info("EMBEDDINGS CONFIGURATION LOADED:")
+            logger.info(f"  Model: {emb_config.get('model', 'NOT SET')}")
+            logger.info(f"  API Base: {emb_config.get('api_base', 'NOT SET')}")
+            logger.info(f"  Dimensions: {emb_config.get('dimensions', 'NOT SET')}")
+            logger.info("=" * 80)
+        except Exception as e:
+            logger.warning(f"Could not log embeddings config: {e}")
+        
         # Get configuration directly from secrets
         try:
             self.azure_endpoint = st.secrets["azure_ai_foundry"]["proj_endpoint"]
@@ -130,6 +146,26 @@ class DataAnalystApp:
                 render_knowledge_base_sidebar(indexer)
             except Exception as e:
                 logger.warning(f"⚠️ Knowledge Base UI not available: {e}")
+            
+            # Conversation controls
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Clear", use_container_width=True, help="Clear conversation"):
+                    st.session_state.messages = []
+                    st.session_state.user_messages = []
+                    st.session_state.workflow_cancelled = False
+                    if 'executor_iterations' in st.session_state:
+                        del st.session_state.executor_iterations
+                    if 'reviewer_iterations' in st.session_state:
+                        del st.session_state.reviewer_iterations
+                    st.rerun()
+            with col2:
+                if st.button("🛑 Stop", use_container_width=True, type="primary", help="Stop current workflow"):
+                    st.session_state.workflow_cancelled = True
+                    logger.info("🛑 Workflow stop requested by user")
+                    st.toast("⏹️ Stopping workflow...")
+                    st.rerun()
         
         # Initialize session state
         if "messages" not in st.session_state:
@@ -147,9 +183,116 @@ class DataAnalystApp:
         current_time = datetime.now(timezone.utc)
         return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
     
+    def _is_clarifying_question(self, prompt: str) -> bool:
+        """Detect if the question is clarifying (asking about previous work)."""
+        clarifying_keywords = [
+            'как ты', 'как вы', 'покажи', 'повтори', 'еще раз', 'снова',
+            'формул', 'запрос', 'sql', 'какой запрос', 'какая формула',
+            'таблиц', 'посчитал', 'получил', 'нашел', 'использовал',
+            'какой id', 'какое id', 'id было', 'какой был', 'какая была', 'какое было',
+            'что ты', 'что вы', 'откуда', 'почему', 'объясни', 'расскажи как',
+            'how did you', 'show me', 'what was', 'which', 'repeat', 'again',
+            'formula', 'query', 'table', 'calculated', 'found', 'used',
+            'what id', 'explain', 'why'
+        ]
+        prompt_lower = prompt.lower()
+        has_keyword = any(keyword in prompt_lower for keyword in clarifying_keywords)
+        word_count = len(prompt.split())
+        is_short = word_count <= 10
+        has_question_mark = '?' in prompt
+        return has_keyword or (is_short and has_question_mark)
+    
+    async def _quick_answer_from_context(self, prompt: str) -> str:
+        """Answer clarifying questions directly from conversation history."""
+        if 'messages' not in st.session_state or len(st.session_state.messages) < 2:
+            return None
+        
+        # Build context from last assistant messages
+        assistant_msgs = [
+            msg for msg in st.session_state.messages 
+            if msg.get('role') == 'assistant' and msg.get('content')
+        ]
+        recent_assistant = assistant_msgs[-3:] if len(assistant_msgs) >= 3 else assistant_msgs
+        context_text = '\n\n---\n\n'.join([msg.get('content', '')[:6000] for msg in recent_assistant])
+        
+        if not context_text:
+            return None
+        
+        try:
+            import openai
+            client = openai.AzureOpenAI(
+                api_key=self.openai_api_key,
+                api_version='2024-02-01',
+                azure_endpoint=self.openai_base_url
+            )
+            
+            system_prompt = f"""You are a helpful assistant answering follow-up questions about previous data analysis.
+
+CONTEXT FROM PREVIOUS ANALYSIS:
+{context_text[:12000]}
+
+RULES:
+1. Answer the user's question based on the context above
+2. If the context contains relevant information (formulas, queries, IDs, calculations), summarize it
+3. If you can partially answer, do so and mention what's missing
+4. ONLY say "Мне нужно выполнить новый анализ" if the context has ZERO relevant information
+5. Be concise and direct. Use Russian for responses."""
+            
+            response = client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.2,
+                max_tokens=1500
+            )
+            
+            answer = response.choices[0].message.content
+            logger.info(f'Quick answer LLM response (first 100 chars): {answer[:100]}...')
+            
+            if 'нужно выполнить новый анализ' in answer.lower():
+                return None
+            
+            return answer
+            
+        except Exception as e:
+            logger.error(f'Error in quick answer: {e}')
+            return None
+    
     async def run_workflow(self, prompt: str) -> None:
         """Run the complete workflow for a user prompt."""
-        self.spinner_manager.start("Planning your request...")
+        import time
+        start_time = time.time()
+        
+        # Check if this is a clarifying question
+        if self._is_clarifying_question(prompt):
+            logger.info(f'🔍 Detected clarifying question, attempting quick answer')
+            self.spinner_manager.start('⚡ Analyzing conversation history...')
+            
+            quick_answer = await self._quick_answer_from_context(prompt)
+            
+            if quick_answer:
+                elapsed = time.time() - start_time
+                logger.info(f'✅ Quick answer in {elapsed:.1f}s')
+                self.spinner_manager.stop()
+                
+                st.session_state.messages.append({
+                    'role': 'assistant',
+                    'content': quick_answer,
+                    'agent_id': 'quick_context',
+                    'elapsed_time': elapsed
+                })
+                
+                with st.chat_message('assistant'):
+                    st.markdown(quick_answer)
+                    st.caption(f'⚡ Answered from context in **{elapsed:.1f}s**')
+                
+                return
+            else:
+                logger.info(f'⚠️ Quick answer not possible, using full workflow')
+        
+        self.spinner_manager.start('🤖 Planning your request...')
         
         # Prepare common client parameters
         api_key = self.openai_api_key
@@ -207,10 +350,35 @@ class DataAnalystApp:
             
             # Build workflow with all agents
             workflow = await workflow_builder.build_workflow(threads, prompt)
-            async for event in workflow.run_stream(prompt):
-                await event_handler.handle_orchestrator_message(event)
-
-            self.spinner_manager.stop()
+            
+            # Run workflow with automatic retry on rate limit
+            from src.utils.retry_helper import retry_on_rate_limit
+            
+            # Initialize cancellation flag
+            st.session_state.workflow_cancelled = False
+            
+            async def _run_workflow_stream():
+                async for event in workflow.run_stream(prompt):
+                    # Check for cancellation
+                    if st.session_state.get('workflow_cancelled', False):
+                        logger.info("🛑 Workflow cancelled by user")
+                        st.warning("⏹️ Workflow stopped by user request.")
+                        return
+                    await event_handler.handle_orchestrator_message(event)
+            
+            try:
+                await retry_on_rate_limit(
+                    _run_workflow_stream,
+                    max_retries=5,
+                    initial_delay=2.0,
+                    max_delay=30.0
+                )
+            except Exception as e:
+                logger.error(f"Workflow failed after retries: {e}")
+                st.error(f"❌ Произошла ошибка: {str(e)[:200]}")
+                st.info("💡 Попробуйте повторить запрос через несколько секунд.")
+            finally:
+                self.spinner_manager.stop()
     
     def _create_tool_calls_middleware(self, event_handler):
         """Create tool calls middleware with provided event handler."""

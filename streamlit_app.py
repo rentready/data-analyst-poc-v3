@@ -3,6 +3,8 @@
 import streamlit as st
 import logging
 import asyncio
+import time
+from typing import Optional
 from src.ui.app import DataAnalystApp
 
 st.set_page_config(page_title="Data Analyst Chat V3", page_icon="🤖")
@@ -10,12 +12,204 @@ logging.basicConfig(level=logging.INFO, force=True)
 
 logger = logging.getLogger(__name__)
 
+# DEBUG: Confirm this file is loaded
+logger.info('🔴🔴🔴 streamlit_app.py V3 LOADED - with quick path 🔴🔴🔴')
+
+# Keywords that indicate a clarifying question
+CLARIFYING_KEYWORDS = [
+    'как ты', 'как вы', 'покажи', 'повтори', 'еще раз', 'снова',
+    'формул', 'запрос', 'sql', 'какой запрос', 'какая формула',
+    'таблиц', 'посчитал', 'получил', 'нашел', 'использовал',
+    'какой id', 'какое id', 'id было', 'какой был', 'какая была', 'какое было',
+    'что ты', 'что вы', 'откуда', 'почему', 'объясни', 'расскажи как',
+    'how did you', 'show me', 'what was', 'which', 'repeat', 'again',
+    'formula', 'query', 'table', 'calculated', 'found', 'used',
+    'what id', 'explain', 'why'
+]
+
 
 class DataAnalystAppV3(DataAnalystApp):
     """Main application class for Data Analyst Chat V3 - uses WorkflowBuilderV3."""
     
+    def _is_clarifying_question(self, prompt: str) -> bool:
+        """Check if the prompt is a clarifying question about previous work."""
+        prompt_lower = prompt.lower()
+        has_keyword = any(keyword in prompt_lower for keyword in CLARIFYING_KEYWORDS)
+        word_count = len(prompt.split())
+        is_short = word_count <= 15
+        has_question_mark = '?' in prompt
+        return has_keyword or (is_short and has_question_mark)
+    
+    async def _quick_answer_from_context(self, prompt: str) -> Optional[str]:
+        """Try to answer from conversation context using a simple LLM call."""
+        if 'messages' not in st.session_state or len(st.session_state.messages) < 2:
+            return None
+        
+        # Get ALL messages from conversation history (assistant + tool results)
+        # Filter to assistant messages - check 'assistant' and '🤖' roles
+        assistant_msgs = []
+        for msg in st.session_state.messages:
+            role = msg.get('role', '')
+            if role in ('assistant', '🤖'):
+                # Get content from 'content' or 'event' field
+                content = msg.get('content')
+                event = msg.get('event')
+                
+                # If we have event object, try to extract text from it
+                if event and not content:
+                    # Magentic events have message.text structure
+                    if hasattr(event, 'message') and hasattr(event.message, 'text'):
+                        content = event.message.text
+                    elif hasattr(event, 'text'):
+                        content = event.text
+                    # Also try contents for agent messages
+                    elif hasattr(event, 'message') and hasattr(event.message, 'contents'):
+                        # Extract text from contents list
+                        texts = []
+                        for c in event.message.contents:
+                            if hasattr(c, 'text'):
+                                texts.append(c.text)
+                            elif hasattr(c, 'result'):
+                                texts.append(str(c.result)[:2000])  # Limit tool results
+                        content = '\n'.join(texts)
+                    else:
+                        # Fallback: convert to string
+                        content = str(event)[:3000]
+                
+                if content and isinstance(content, str) and len(content) > 50:
+                    assistant_msgs.append({'role': 'assistant', 'content': content})
+        
+        # Build context from ALL assistant messages, but limit total size to ~30K chars
+        # (roughly 7500 tokens, leaving room for system prompt and response)
+        MAX_CONTEXT_SIZE = 30000
+        context_parts = []
+        total_size = 0
+        
+        # Start from most recent messages (reverse order)
+        for msg in reversed(assistant_msgs):
+            content = msg.get('content', '')[:5000]  # Max 5K per message
+            if total_size + len(content) > MAX_CONTEXT_SIZE:
+                break
+            context_parts.append(content)
+            total_size += len(content)
+        
+        # Reverse back to chronological order
+        context_parts.reverse()
+        context_text = '\n\n---\n\n'.join(context_parts)
+        
+        if not context_text:
+            logger.warning(f'⚠️ Quick answer: No context_text found (assistant_msgs count: {len(assistant_msgs)})')
+            return None
+        
+        logger.info(f'📝 Quick answer: Found {len(assistant_msgs)} assistant messages, context_text length: {len(context_text)}')
+        
+        try:
+            from openai import AzureOpenAI
+            
+            client = AzureOpenAI(
+                api_key=st.secrets['open_ai']['api_key'],
+                api_version='2024-02-01',
+                azure_endpoint=st.secrets['open_ai']['base_url']
+            )
+            
+            # More permissive system prompt
+            system_prompt = """You are a helpful assistant answering follow-up questions about previous data analysis.
+
+CONTEXT FROM PREVIOUS ANALYSIS:
+{context}
+
+RULES:
+1. Answer the user's question based on the context above
+2. If the context contains relevant information (formulas, queries, IDs, calculations), summarize it
+3. If you can partially answer, do so and mention what's missing
+4. ONLY say "I need to run new queries" if the context has ZERO relevant information
+5. Be concise and direct. Use Russian for responses.""".format(context=context_text[:12000])
+            
+            model_name = st.secrets['open_ai'].get('model', 'gpt-4o')
+            
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.2,
+                max_tokens=1500
+            )
+            
+            answer = response.choices[0].message.content
+            logger.info(f'Quick answer LLM response (first 200 chars): {answer[:200]}...')
+            
+            # Check if LLM says it cannot answer from context (in Russian or English)
+            no_answer_phrases = [
+                'need to run new queries',
+                'нет информации',
+                'нет данных', 
+                'отсутствует',
+                'не содержит',
+                'нет ответа',
+                'не могу ответить',
+                'недостаточно информации',
+                'нужно выполнить',
+                'требуется дополнительный',
+                'нужен новый запрос',
+                'нужно получить',
+                'уточните'
+            ]
+            
+            answer_lower = answer.lower()
+            if any(phrase in answer_lower for phrase in no_answer_phrases):
+                logger.info(f'⚠️ Quick answer: LLM says info not in context, falling back to full workflow')
+                return None
+            
+            return answer
+            
+        except Exception as e:
+            logger.error(f'Error in quick answer: {e}')
+            return None
+    
     async def run_workflow(self, prompt: str) -> None:
         """Run the workflow using WorkflowBuilderV3."""
+        # MARKER: This is DataAnalystAppV3.run_workflow
+        logger.info('!!!!!!!!!! DataAnalystAppV3.run_workflow CALLED !!!!!!!!!!')
+        print('!!!!!!!!!! DataAnalystAppV3.run_workflow CALLED !!!!!!!!!!', flush=True)
+        
+        start_time = time.time()
+        
+        # Debug: check quick path conditions (logger only - no print to avoid encoding issues)
+        is_clarifying = self._is_clarifying_question(prompt)
+        has_messages = 'messages' in st.session_state
+        msg_count = len(st.session_state.messages) if has_messages else 0
+        logger.info('=== QUICK PATH DEBUG ===')
+        logger.info(f'is_clarifying: {is_clarifying}')
+        logger.info(f'has_messages: {has_messages}')
+        logger.info(f'msg_count: {msg_count}')
+        logger.info('========================')
+        
+        # Check for quick path (clarifying questions)
+        if is_clarifying and has_messages and msg_count >= 2:
+            logger.info(f'⚡ Attempting quick answer from context for: {prompt}')
+            self.spinner_manager.start('Checking context...')
+            
+            quick_answer = await self._quick_answer_from_context(prompt)
+            
+            if quick_answer:
+                elapsed_time = time.time() - start_time
+                logger.info(f'✅ Quick answer provided in {elapsed_time:.2f}s')
+                
+                # Add to messages with time tracking
+                st.session_state.messages.append({
+                    'role': 'assistant',
+                    'content': quick_answer,
+                    'agent_id': 'quick_answer',
+                    'elapsed_time': elapsed_time
+                })
+                self.spinner_manager.stop()
+                st.rerun()  # Force UI update
+                return
+            else:
+                logger.info('⚠️ Quick path failed (LLM said needs new queries), falling back to full workflow')
+        
         self.spinner_manager.start("Creating analysis plan...")
         
         # Initialize user messages collection if not exists
@@ -153,6 +347,17 @@ class DataAnalystAppV3(DataAnalystApp):
                 
                 # Run workflow with the prompt (not lambda)
                 result = await workflow.run(combined_prompt)
+                
+                # Track elapsed time for full workflow
+                elapsed_time = time.time() - start_time
+                logger.info(f'Full workflow completed in {elapsed_time:.2f}s')
+                
+                # Update last message with time tracking
+                if st.session_state.messages:
+                    last_msg = st.session_state.messages[-1]
+                    if last_msg.get('role') == 'assistant':
+                        last_msg['agent_id'] = 'workflow'
+                        last_msg['elapsed_time'] = elapsed_time
                     
             except Exception as e:
                 logger.error(f"Error running workflow: {e}", exc_info=True)

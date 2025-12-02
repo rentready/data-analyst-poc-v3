@@ -134,6 +134,9 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            # Info message about rate limiting
+            st.info('ℹ️ File upload may take some time due to Azure OpenAI rate limits. Please be patient.')
+            
             upload_errors = []
             upload_success = []
             
@@ -142,7 +145,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                 filename = uploaded_file.name
                 file_type = filename.split('.')[-1].lower()
                 
-                status_text.text(f'Processing {filename}...')
+                status_text.text(f'Processing {filename}... ({idx + 1}/{len(uploaded_files)})')
                 
                 try:
                     # Update chunker strategy
@@ -165,7 +168,11 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                         )
                 
                 except Exception as e:
-                    upload_errors.append(f'{filename}: {str(e)}')
+                    error_msg = str(e)
+                    if 'rate' in error_msg.lower() or '429' in error_msg:
+                        upload_errors.append(f'{filename}: Rate limit exceeded. Please try again later.')
+                    else:
+                        upload_errors.append(f'{filename}: {error_msg}')
                 
                 progress_bar.progress((idx + 1) / len(uploaded_files))
             
@@ -181,6 +188,7 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
                 st.error('❌ Errors occurred:')
                 for error in upload_errors:
                     st.error(f'  • {error}')
+                st.info('💡 Tip: If you see rate limit errors, wait a few minutes and try uploading fewer files at once.')
             
             st.rerun()
         
@@ -240,4 +248,3 @@ def render_search_test_ui():
             
             except Exception as e:
                 st.error(f'Search error: {e}')
-

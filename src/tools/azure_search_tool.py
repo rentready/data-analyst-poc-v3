@@ -70,7 +70,8 @@ class AzureSearchTool:
     async def _search_files(self, query: str, top_k: int = 5) -> str:
         """Search in file-based knowledge base using keyword search (NO embeddings needed)."""
         try:
-            logger.info(f"Searching files with keyword search: '{query}'")
+            logger.info(f"🔍 _search_files called: query='{query}', top_k={top_k}")
+            logger.info(f"   file_search_client: {self.file_search_client}")
             
             # Use KEYWORD search ONLY (no embeddings needed)
             results = await self.file_search_client.search(
@@ -78,6 +79,8 @@ class AzureSearchTool:
                 search_type="keyword",  # KEYWORD ONLY!
                 top_k=top_k
             )
+            
+            logger.info(f"   Search completed, got {len(results) if results else 0} results")
             
             if not results:
                 return "No results found in files."
@@ -228,16 +231,25 @@ class AzureSearchTool:
         Synchronous wrapper for execute_async.
         This is the method that will be called by Azure AI Agent Framework.
         """
+        logger.info(f"🚀 AzureSearchTool.execute() called:")
+        logger.info(f"   query='{query}'")
+        logger.info(f"   search_type='{search_type}'")
+        logger.info(f"   top_k={top_k}")
+        
         try:
             # Try to get the current running loop
             try:
                 loop = asyncio.get_running_loop()
+                logger.info(f"   Found running event loop: {loop}")
                 # If we're already in an async context, use nest_asyncio to allow nested loops
                 import nest_asyncio
                 nest_asyncio.apply()
+                logger.info("   Applied nest_asyncio")
                 result = asyncio.run(self.execute_async(query, search_type, top_k))
+                logger.info(f"   Result length: {len(result)} chars")
                 return result
-            except RuntimeError:
+            except RuntimeError as e:
+                logger.info(f"   No running loop (RuntimeError: {e}), creating new one")
                 # No loop running, create a new one
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
@@ -245,11 +257,12 @@ class AzureSearchTool:
                     result = loop.run_until_complete(
                         self.execute_async(query, search_type, top_k)
                     )
+                    logger.info(f"   Result length: {len(result)} chars")
                     return result
                 finally:
                     loop.close()
         except Exception as e:
-            logger.error(f"Error executing Azure Search Tool: {e}", exc_info=True)
+            logger.error(f"❌ Error executing Azure Search Tool: {e}", exc_info=True)
             return f"Error executing search: {str(e)}"
 
 

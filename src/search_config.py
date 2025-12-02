@@ -24,6 +24,21 @@ _cosmosdb_search_client: Optional[SearchClient] = None
 _cosmosdb_kb_search_tool: Optional[CosmosDBKnowledgeBaseSearchTool] = None
 
 
+def reset_singletons():
+    """Reset all singleton instances (for config reload)."""
+    global _search_client, _embeddings_generator, _document_indexer, _kb_search_tool
+    global _cosmosdb_search_client, _cosmosdb_kb_search_tool
+    
+    _search_client = None
+    _embeddings_generator = None
+    _document_indexer = None
+    _kb_search_tool = None
+    _cosmosdb_search_client = None
+    _cosmosdb_kb_search_tool = None
+    
+    logger.info('🔄 All singleton instances reset')
+
+
 def init_azure_search_config() -> dict:
     """
     Initialize Azure AI Search configuration from secrets.
@@ -116,6 +131,17 @@ def get_embeddings_generator() -> EmbeddingsGenerator:
         # Determine if using Azure OpenAI
         use_azure = 'azure.com' in config.get('openai_base_url', '')
         
+        logger.info('=' * 60)
+        logger.info('Initializing EmbeddingsGenerator:')
+        logger.info(f'  Model: {config["embeddings_model"]}')
+        logger.info(f'  Dimensions: {config["embeddings_dimensions"]}')
+        logger.info(f'  Batch size: {config["embeddings_batch_size"]}')
+        logger.info(f'  Use Azure: {use_azure}')
+        logger.info(f'  Base URL: {config.get("openai_base_url")}')
+        logger.info(f'  API Version: {config.get("openai_api_version")}')
+        logger.info(f'  API Key: {"*" * 10 + config["openai_api_key"][-10:] if config.get("openai_api_key") else "MISSING"}')
+        logger.info('=' * 60)
+        
         _embeddings_generator = EmbeddingsGenerator(
             model=config['embeddings_model'],
             dimensions=config['embeddings_dimensions'],
@@ -126,7 +152,7 @@ def get_embeddings_generator() -> EmbeddingsGenerator:
             api_version=config.get('openai_api_version')
         )
         
-        logger.info(f'Initialized EmbeddingsGenerator with model: {config["embeddings_model"]}')
+        logger.info(f'✅ EmbeddingsGenerator initialized successfully')
     
     return _embeddings_generator
 

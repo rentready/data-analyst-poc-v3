@@ -20,31 +20,53 @@ MAX_ITERATIONS = 10
 
 
 
-async def _collect_stream_text(agent, prompt: str) -> str:
-    """Run agent with run_stream and collect all text."""
-    full_text = ""
-    async for chunk in agent.run_stream(prompt):
-        # Check if chunk is a dict with contents (like chat_message)
-        if isinstance(chunk, dict):
-            if 'contents' in chunk:
-                contents = chunk['contents']
-                if isinstance(contents, list):
-                    for item in contents:
-                        if isinstance(item, dict) and item.get('type') == 'text':
-                            full_text += item.get('text', '')
-                        elif isinstance(item, str):
-                            full_text += item
-            elif 'text' in chunk:
-                full_text += chunk['text']
-        elif isinstance(chunk, str):
-            full_text += chunk
-        elif hasattr(chunk, 'text'):
-            text = chunk.text
-            if isinstance(text, str):
-                full_text += text
- 
-    logger.info(f"Collected {len(full_text)} chars")
-    return full_text
+async def _collect_stream_text(agent, prompt: str, max_retries: int = 5) -> str:
+    """
+    Run agent with run_stream and collect all text.
+    Automatically retries on rate limit errors.
+    
+    Args:
+        agent: Agent to run
+        prompt: Prompt to send to agent
+        max_retries: Maximum retry attempts on rate limit (default: 5)
+        
+    Returns:
+        Collected text from agent
+    """
+    from src.utils.retry_helper import retry_on_rate_limit
+    
+    async def _run_stream():
+        full_text = ""
+        async for chunk in agent.run_stream(prompt):
+            # Check if chunk is a dict with contents (like chat_message)
+            if isinstance(chunk, dict):
+                if 'contents' in chunk:
+                    contents = chunk['contents']
+                    if isinstance(contents, list):
+                        for item in contents:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                full_text += item.get('text', '')
+                            elif isinstance(item, str):
+                                full_text += item
+                elif 'text' in chunk:
+                    full_text += chunk['text']
+            elif isinstance(chunk, str):
+                full_text += chunk
+            elif hasattr(chunk, 'text'):
+                text = chunk.text
+                if isinstance(text, str):
+                    full_text += text
+     
+        logger.info(f"Collected {len(full_text)} chars")
+        return full_text
+    
+    # Retry wrapper for rate limit handling
+    return await retry_on_rate_limit(
+        _run_stream,
+        max_retries=max_retries,
+        initial_delay=2.0,
+        max_delay=30.0
+    )
 
 
 class EntityExtractor(Executor):

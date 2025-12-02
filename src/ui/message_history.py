@@ -35,3 +35,12 @@ def render_chat_history():
         
         with current_chat:
             event_renderer.render(content)
+            
+            # Show elapsed time for assistant messages
+            if item.get('role') == 'assistant' and 'elapsed_time' in item:
+                elapsed = item['elapsed_time']
+                agent_type = item.get('agent_id', 'workflow')
+                if agent_type == 'quick_answer':
+                    st.caption(f'⚡ Answered from context in {elapsed:.2f}s')
+                else:
+                    st.caption(f'🤖 Agent workflow completed in {elapsed:.2f}s')

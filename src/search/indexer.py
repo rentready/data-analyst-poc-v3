@@ -147,6 +147,7 @@ class DocumentIndexer:
             logger.info(f'Generating embeddings for {len(chunks)} chunks')
             chunk_texts = [chunk.content for chunk in chunks]
             embeddings = await self.embeddings_generator.generate_embeddings_batch(chunk_texts)
+            logger.info(f'Generated {len(embeddings) if embeddings else 0} embeddings')
             
             # Prepare documents for indexing
             documents = []
@@ -172,10 +173,16 @@ class DocumentIndexer:
                 
                 documents.append(document)
             
+            # Check if we have documents to upload
+            if not documents:
+                logger.error(f'No documents to upload for {filename} - all embeddings were None or empty')
+                raise ValueError(f'Failed to create indexable documents from {filename} - no valid embeddings generated')
+            
             # Upload to Azure Search
             logger.info(f'Uploading {len(documents)} documents to index')
             async with self._get_client() as client:
                 result = await client.upload_documents(documents=documents)
+                logger.info(f'Upload result received: {len(result) if result else 0} items')
             
             # Count successes and failures
             success_count = sum(1 for r in result if r.succeeded)
