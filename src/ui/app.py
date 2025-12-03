@@ -342,6 +342,7 @@ RULES:
             workflow_builder = WorkflowBuilder(
                 project_client=project_client,
                 project_endpoint=self.azure_endpoint,
+                credential=credential,
                 model=self.model_name,
                 middleware=[self._create_tool_calls_middleware(event_handler)],
                 tools=[mcp_tool_with_approval, self.get_time],

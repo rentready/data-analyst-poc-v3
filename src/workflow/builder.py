@@ -261,13 +261,14 @@ async def on_orchestrator_event(event: MagenticOrchestratorMessageEvent, event_h
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, project_client, project_endpoint: str, model: str, middleware: list, tools: list, spinner_manager, event_handler, cosmosdb_search_tool=None):
+    def __init__(self, project_client, project_endpoint: str, credential, model: str, middleware: list, tools: list, spinner_manager, event_handler, cosmosdb_search_tool=None):
         """
         Initialize workflow builder.
         
         Args:
             project_client: Azure AI Project client
             project_endpoint: Azure AI Project endpoint URL
+            credential: Azure async credential for authentication
             model: Model deployment name
             middleware: List of middleware functions
             tools: List of tools available to agents
@@ -277,6 +278,7 @@ class WorkflowBuilder:
         """
         self.project_client = project_client
         self.project_endpoint = project_endpoint
+        self.credential = credential
         self.model = model
         self.middleware = middleware
         self.tools = tools
@@ -301,6 +303,7 @@ class WorkflowBuilder:
         agent_client = AzureAIAgentClient(
             project_client=self.project_client,
             project_endpoint=self.project_endpoint,
+            async_credential=self.credential,
             model_deployment_name=self.model, 
             thread_id=threads["orchestrator"].id
         )

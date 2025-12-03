@@ -263,7 +263,7 @@ RULES:
         from azure.ai.projects.aio import AIProjectClient
         from src.ui.thread_manager import ThreadManager
         from src.workflow.builder import WorkflowBuilder
-        
+
         async with (
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint=self.azure_endpoint, credential=credential) as project_client,
@@ -334,6 +334,7 @@ RULES:
             workflow_builder = WorkflowBuilder(
                 project_client=project_client,
                 project_endpoint=self.azure_endpoint,
+                credential=credential,
                 model=self.model_name,
                 middleware=middleware,
                 tools=mcp_tools,
@@ -371,7 +372,7 @@ def main():
     """Main entry point for the application."""
     app = DataAnalystAppV3()
     app.run()
-
+        
 
 if __name__ == "__main__":
     main()
