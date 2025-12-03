@@ -261,12 +261,13 @@ async def on_orchestrator_event(event: MagenticOrchestratorMessageEvent, event_h
 class WorkflowBuilder:
     """Builds Magentic workflow with all agents and configuration."""
     
-    def __init__(self, project_client, model: str, middleware: list, tools: list, spinner_manager, event_handler, cosmosdb_search_tool=None):
+    def __init__(self, project_client, project_endpoint: str, model: str, middleware: list, tools: list, spinner_manager, event_handler, cosmosdb_search_tool=None):
         """
         Initialize workflow builder.
         
         Args:
             project_client: Azure AI Project client
+            project_endpoint: Azure AI Project endpoint URL
             model: Model deployment name
             middleware: List of middleware functions
             tools: List of tools available to agents
@@ -275,6 +276,7 @@ class WorkflowBuilder:
             cosmosdb_search_tool: Optional Cosmos DB search tool
         """
         self.project_client = project_client
+        self.project_endpoint = project_endpoint
         self.model = model
         self.middleware = middleware
         self.tools = tools
@@ -297,7 +299,8 @@ class WorkflowBuilder:
         from agent_framework.azure import AzureAIAgentClient
         
         agent_client = AzureAIAgentClient(
-            project_client=self.project_client, 
+            project_client=self.project_client,
+            project_endpoint=self.project_endpoint,
             model_deployment_name=self.model, 
             thread_id=threads["orchestrator"].id
         )
