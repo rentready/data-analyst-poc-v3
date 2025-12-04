@@ -1,0 +1,9 @@
+2025-12-04 19:13:12,649 - INFO - __main__ - Logging to file: test_log_20251204_191312.txt
+2025-12-04 19:13:18,758 - INFO - __main__ - Logging to file: test_log_20251204_191318.txt
+2025-12-04 19:15:37,689 - INFO - __main__ - Logging to file: test_log_20251204_191537.txt
+2025-12-04 19:15:37,811 - INFO - azure.identity.aio._credentials.environment - No environment configuration found.
+2025-12-04 19:15:37,818 - INFO - azure.identity.aio._credentials.managed_identity - ManagedIdentityCredential will use IMDS
+2025-12-04 19:15:37,820 - INFO - src.ui.thread_manager - Created thread object for data_planner with id=None (framework will create)
+2025-12-04 19:15:37,825 - INFO - src.ui.thread_manager - Created thread object for data_extractor with id=None (framework will create)
+2025-12-04 19:15:37,826 - INFO - src.ui.thread_manager - Created thread object for orchestrator with id=None (framework will create)
+2025-12-04 19:15:38,712 - ERROR - src.credentials - Failed to get access token. Status: 401, Error: {"error":"invalid_client","error_description":"AADSTS7000216: 'client_assertion', 'client_secret' or 'request' is required for the 'client_credentials' grant type. Trace ID: ff6fe67c-2918-403a-b0ac-5ad8b93fb605 Correlation ID: d20982a0-6e51-4e0b-87d0-eefd295f4862 Timestamp: 2025-12-04 16:15:38Z","error_codes":[7000216],"timestamp":"2025-12-04 16:15:38Z","trace_id":"ff6fe67c-2918-403a-b0ac-5ad8b93fb605","correlation_id":"d20982a0-6e51-4e0b-87d0-eefd295f4862","error_uri":"https://login.microsoftonline.com/error?code=7000216"}

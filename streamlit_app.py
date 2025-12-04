@@ -164,7 +164,7 @@ RULES:
             
             return answer
             
-        except Exception as e:
+    except Exception as e:
             logger.error(f'Error in quick answer: {e}')
             return None
     

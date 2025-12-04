@@ -38,6 +38,8 @@ ACCEPTANCE RULES:
 3. Ask user for information instead of using tools
 4. Run redundant queries for data already in context
 5. Say "please provide..." or "confirm..."
+6. USE DIFFERENT FORMULA than what knowledge base provided (e.g., adding coefficients like 1.2x)
+7. MODIFY category definitions from knowledge base (0/1/2/3 values have FIXED meanings)
 
 ═══════════════════════════════════════════════════════════════
 EXAMPLES:
@@ -127,6 +129,17 @@ Call: search_knowledge_base(query="<full user request>", search_type="all", top_
 - This finds definitions and context for ANY terms
 - Do this FIRST, before making assumptions
 - Example terms to search: "профессионал", "bookable resource", person names, properties
+
+🔴 CRITICAL: IF KNOWLEDGE BASE RETURNS SQL QUERY - USE IT AS IS!
+- Do NOT simplify or modify the SQL logic
+- Only replace placeholder values (IDs, dates, names)
+- Keep ALL JOINs, WHERE conditions, CASE expressions EXACTLY as shown
+- The SQL in KB was written by domain experts - trust it completely
+
+🔴 WHEN PASSING SQL TO DATA EXTRACTOR:
+- Include the COMPLETE SQL query from KB in your response
+- Say: "Use this EXACT SQL from knowledge base: [paste full SQL]"
+- Emphasize: "Do NOT modify the CASE expression or WHERE conditions"
 
 STEP 2 - SEARCH DATABASE WITH MCP (CANNOT SKIP):
 ═══════════════════════════════════════════════
@@ -222,6 +235,17 @@ STEP 1 - USE MCP TOOLS (CANNOT SKIP):
 - mcp_rentready-prod_find_accounts() to search entities
 - mcp_rentready-prod_find_work_orders() for work orders
 - Execute immediately, don't just show SQL
+
+🔴🔴🔴 ABSOLUTE RULE: USE FORMULAS FROM DATA PLANNER EXACTLY! 🔴🔴🔴
+- If Data Planner gave you a CASE formula → USE IT CHARACTER BY CHARACTER
+- Do NOT invent your own formula or add coefficients (like 1.2, 1.5, etc.)
+- Do NOT reinterpret category meanings (0/1/2/3 have FIXED definitions)
+- Do NOT simplify SQL - use ALL JOINs, WHERE conditions, GROUP BY as provided
+
+EXAMPLE OF VIOLATION:
+❌ Data Planner says: "0=no load, 1=low (<maxcap), 2=equal, 3=over"
+❌ You write: "0=below, 1=at, 2=over but ≤1.2x, 3=over 1.2x" ← THIS IS WRONG!
+✅ You MUST use: EXACTLY what Data Planner provided, no modifications!
 
 STEP 2 - HANDLE FAILURES (KEEP TRYING):
 - If query fails: check table names, try different conditions
@@ -485,46 +509,35 @@ After saying what you'll do → DO IT IMMEDIATELY with tool calls!"""
             tools=self.tools + kb_tools,
             conversation_id=threads["data_extractor"].id,
             temperature=0.0,  # Zero temperature for strict execution
-            additional_instructions="""🚨 CRITICAL RULE: PLAN + EXECUTE IN ONE RESPONSE!
+            additional_instructions="""
+🔴🔴🔴 ABSOLUTE RULE #1: COPY SQL FROM KNOWLEDGE BASE EXACTLY! 🔴🔴🔴
+
+If Data Planner provided SQL query from Knowledge Base:
+1. COPY the SQL EXACTLY - character by character
+2. ONLY replace: <PRO_ID>, dates, resource names with actual values
+3. DO NOT change: CASE expressions, JOINs, WHERE conditions, column names
+4. DO NOT simplify: Keep ALL conditions, even if they seem complex
+5. DO NOT use COUNT(*) if KB says SUM(rr_lucasnumbertotal)
+
+EXAMPLE - KB provides this SQL:
+```sql
+SELECT CONVERT(DATE, brb.starttime), SUM(brb.rr_lucasnumbertotal) as bookings,
+CASE WHEN SUM(...) < maxcap THEN 1 WHEN ... = maxcap THEN 2 WHEN ... > maxcap THEN 3 END as pro_load
+FROM bookableresourcebooking brb JOIN ...
+WHERE brb.resource = '<PRO_ID>' AND ...
+```
+
+✅ CORRECT: Copy entire SQL, replace <PRO_ID> with actual ID
+❌ WRONG: Simplify to "SELECT COUNT(*) FROM bookableresourcebooking"
+❌ WRONG: Remove CASE expression
+❌ WRONG: Invent your own formula (like 1.2 * maxcap)
 
 ═══════════════════════════════════════════════════════════════
-YOU CAN DESCRIBE YOUR PLAN, BUT MUST EXECUTE IT IMMEDIATELY!
+RULE #2: EXECUTE IMMEDIATELY
 ═══════════════════════════════════════════════════════════════
 
-ALLOWED FORMAT:
-1. Brief description of what you'll do (1-2 sentences max)
-2. IMMEDIATE MCP tool calls to execute
-3. Show results from tools
-4. Next step with tool calls
-5. Continue until data is extracted
-
-═══════════════════════════════════════════════════════════════
-EXAMPLE - User: "Find bookings for Magdalena in September 2025"
-═══════════════════════════════════════════════════════════════
-
-✅ CORRECT RESPONSE:
-"I will find Magdalena's ID first, then query her bookings for September 2025."
-
-[Immediately call tool:]
-mcp_rentready-prod_execute_sql(query="SELECT bookableresourceid, name FROM bookableresource WHERE name LIKE '%Magdalena%'")
-
-[After getting results:]
-"Found Magdalena (ID: abc-123). Now getting September 2025 bookings."
-
-[Immediately call tool:]
-mcp_rentready-prod_execute_sql(query="SELECT * FROM bookableresourcebooking WHERE bookableresourceid='abc-123' AND MONTH(starttime)=9 AND YEAR(starttime)=2025")
-
-[Show results in table format]
-
-❌ WRONG RESPONSE:
-"I will query bookableresource to find Magdalena, then bookableresourcebooking for September 2025."
-[STOPS WITHOUT CALLING TOOLS]
-
-═══════════════════════════════════════════════════════════════
-KEY RULE: NEVER END YOUR RESPONSE WITHOUT EXECUTING YOUR PLAN!
-═══════════════════════════════════════════════════════════════
-
-After saying what you'll do → DO IT IMMEDIATELY with MCP tool calls!"""
+After saying what you'll do → DO IT with MCP tool calls!
+NEVER end response without executing your plan!"""
         )
         
         logger.info(f"✅ Data Planner Agent created with Azure AI Search")
