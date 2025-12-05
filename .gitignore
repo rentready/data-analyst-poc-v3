@@ -47,3 +47,19 @@ venv.bak/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Test files and debug output
+test_*.py
+test_*.txt
+test_log_*.txt
+debug_output*.txt
+*_debug.py
+*_test_*.py
+
+# Temporary data files
+*.csv
+knowledge_base/
+examples/
+
+# Note: examples/ are now in Azure Blob Storage
+# Use sync_examples_to_blob.py to upload new templates
