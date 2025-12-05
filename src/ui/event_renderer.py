@@ -13,8 +13,6 @@ from azure.ai.agents.models import (
 
 # Magentic events from agent_framework
 from agent_framework import (
-    MagenticOrchestratorMessageEvent,
-    MagenticOrchestratorMessageEvent,
     MagenticAgentDeltaEvent,
     MagenticAgentMessageEvent,
     MagenticFinalResultEvent,
@@ -150,7 +148,7 @@ class EventRenderer:
     
     # ===== Основной метод рендеринга =====
     
-    def render(self, event: Union[MagenticOrchestratorMessageEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
+    def render(self, event: Union[MagenticAgentMessageEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
         """
         Render event to UI.
         
@@ -159,7 +157,7 @@ class EventRenderer:
         """
         
         # Magentic events
-        if isinstance(event, MagenticOrchestratorMessageEvent):
+        if isinstance(event, MagenticAgentMessageEvent) and getattr(event, 'agent_name', '') == 'orchestrator':
             logger.info(f"**[Orchestrator - {event.message}]**")
             logger.info(f"Role:{event.message.role}")
             logger.info(f"Author Name: {event.message.author_name}")
@@ -202,7 +200,7 @@ class EventRenderer:
             logger.warning(f"Unknown event type: {type(event)}")
         
     
-    def render_orchestrator_message(self, event: MagenticOrchestratorMessageEvent):
+    def render_orchestrator_message(self, event: MagenticAgentMessageEvent):
         """Render orchestrator message."""
         message_text = getattr(event.message, 'text', '')
         
