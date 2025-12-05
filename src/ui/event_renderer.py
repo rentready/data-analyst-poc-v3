@@ -11,10 +11,8 @@ from azure.ai.agents.models import (
     ThreadRun, RunStatus
 )
 
-# Magentic events from agent_framework
-from agent_framework import (
-    MagenticAgentMessageEvent,
-)
+# Note: Event classes removed from agent_framework in v1.0.0b251204
+# Using attribute-based event detection instead of isinstance checks
 
 logger = logging.getLogger(__name__)
 
@@ -145,29 +143,31 @@ class EventRenderer:
     
     # ===== Основной метод рендеринга =====
     
-    def render(self, event: Union[MagenticAgentMessageEvent, 'RunStep', 'MessageDeltaChunk', 'ThreadRun']):
+    def render(self, event):
         """
         Render event to UI.
         
         Args:
-            event: Event to render
+            event: Event to render (any type)
         """
         
-        # Magentic events
-        if isinstance(event, MagenticAgentMessageEvent) and getattr(event, 'agent_name', '') == 'orchestrator':
-            logger.info(f"**[Orchestrator - {event.message}]**")
-            logger.info(f"Role:{event.message.role}")
-            logger.info(f"Author Name: {event.message.author_name}")
-            logger.info(f"{event.message.message_id}")
-            logger.info(f"{event.message.additional_properties}")
-            logger.info(f"{event.message.raw_representation}")
-            self.render_orchestrator_message(event)
-        
-        elif isinstance(event, MagenticAgentMessageEvent):
-            # Check if it's a delta event (has delta_text attribute)
-            if hasattr(event, 'delta_text'):
+        # Magentic agent events - detect by attributes
+        if hasattr(event, 'message') and hasattr(event, 'agent_name'):
+            # Agent message event
+            if getattr(event, 'agent_name', '') == 'orchestrator':
+                logger.info(f"**[Orchestrator - {event.message}]**")
+                if hasattr(event.message, 'role'):
+                    logger.info(f"Role:{event.message.role}")
+                if hasattr(event.message, 'author_name'):
+                    logger.info(f"Author Name: {event.message.author_name}")
+                if hasattr(event.message, 'message_id'):
+                    logger.info(f"{event.message.message_id}")
+                self.render_orchestrator_message(event)
+            elif hasattr(event, 'delta_text'):
+                # Delta event (streaming)
                 self.render_agent_delta(event)
             else:
+                # Regular agent message
                 self.render_agent_message(event)
         
         elif hasattr(event, 'result') and hasattr(event, 'run_id'):
@@ -200,23 +200,24 @@ class EventRenderer:
             logger.warning(f"Unknown event type: {type(event)}")
         
     
-    def render_orchestrator_message(self, event: MagenticAgentMessageEvent):
+    def render_orchestrator_message(self, event):
         """Render orchestrator message."""
-        message_text = getattr(event.message, 'text', '')
+        message_text = getattr(event.message, 'text', '') if hasattr(event, 'message') else ''
+        kind = getattr(event, 'kind', 'message')
         
         # For instructions - explicitly show this is a command to agents
-        if event.kind == "instruction":
+        if kind == "instruction":
             st.info(f"🎯 Assistants, please help with the following request:", icon=":material/question_mark:")
             st.write(message_text)
         
         # For task_ledger - collapse internal context
-        elif event.kind == "task_ledger":
+        elif kind == "task_ledger":
             st.info(f"📋 **Context**")
             st.markdown(message_text)
         
         else:
             # Other types (plan, facts, progress, etc.)
-            st.write(f"**[Orchestrator - {event.kind}]**")
+            st.write(f"**[Orchestrator - {kind}]**")
             st.write(message_text)
             st.write("---")
     
@@ -228,9 +229,12 @@ class EventRenderer:
         text = getattr(event, 'delta_text', getattr(event, 'text', ''))
         logger.debug(f"Agent delta from {agent_id}: {text}")
     
-    def render_agent_message(self, event: MagenticAgentMessageEvent):
+    def render_agent_message(self, event):
         """Render complete agent message."""
-        st.write(event.message.text)
+        if hasattr(event, 'message') and hasattr(event.message, 'text'):
+            st.write(event.message.text)
+        elif hasattr(event, 'text'):
+            st.write(event.text)
     
     def render_agent_final_message(self, agent_id: str, message_text: str):
         """Render agent's final message in collapsible format (auxiliary message)."""
