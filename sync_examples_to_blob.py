@@ -24,8 +24,7 @@ def main():
     
     # Get configuration
     try:
-        import streamlit as st
-        from streamlit import secrets
+        import toml
         
         # Load secrets
         secrets_path = Path(".streamlit/secrets.toml")
@@ -34,17 +33,19 @@ def main():
             print("Please create .streamlit/secrets.toml with azure_storage configuration")
             return 1
         
-        import toml
         secrets_data = toml.load(secrets_path)
         
         connection_string = secrets_data["azure_storage"]["connection_string"]
         container_name = secrets_data["azure_storage"]["examples_container_name"]
         
-    except Exception as e:
-        print(f"❌ ERROR loading configuration: {e}")
+    except KeyError as e:
+        print(f"❌ ERROR: Missing configuration key: {e}")
         print("\nMake sure .streamlit/secrets.toml has [azure_storage] section with:")
         print("  - connection_string")
         print("  - examples_container_name")
+        return 1
+    except Exception as e:
+        print(f"❌ ERROR loading configuration: {e}")
         return 1
     
     # Initialize blob manager

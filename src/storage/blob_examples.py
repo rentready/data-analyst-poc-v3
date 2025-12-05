@@ -3,7 +3,7 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, ContentSettings
 from azure.core.exceptions import ResourceNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ class BlobExamplesManager:
             blob_client.upload_blob(
                 content.encode('utf-8'),
                 overwrite=overwrite,
-                content_settings={'content_type': content_type}
+                content_settings=ContentSettings(content_type=content_type)
             )
             
             logger.info(f"✅ Uploaded blob: {relative_path}")
