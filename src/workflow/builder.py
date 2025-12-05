@@ -1,10 +1,6 @@
 """WorkflowBuilder for creating Magentic workflows with all agents."""
 
-from agent_framework import (
-    MagenticBuilder,
-    MagenticOrchestratorMessageEvent,
-    MagenticFinalResultEvent
-)
+from agent_framework import MagenticBuilder
 import logging
 import asyncio
 
@@ -373,20 +369,9 @@ YOU HAVE MCP TOOLS - EXECUTE THEM! DON'T ASK USER TO DO IT!
 DATA_EXTRACTOR_DESCRIPTION = "Data analyst who executes solutions, builds SQL queries, handles errors, and presents results clearly."
 
 
-async def on_orchestrator_event(event: MagenticOrchestratorMessageEvent, event_handler) -> None:
-    """
-    Handle workflow-level events (orchestrator messages, final results) via unified event handler.
-    
-    Args:
-        event: Magentic callback event
-        event_handler: Unified event handler instance
-    """
-    
-    if isinstance(event, MagenticOrchestratorMessageEvent):
-        await event_handler.handle_orchestrator_message(event)
-    
-    elif isinstance(event, MagenticFinalResultEvent):
-        await event_handler.handle_final_result(event)
+# Note: on_orchestrator_event function removed as MagenticOrchestratorMessageEvent 
+# and MagenticFinalResultEvent are not exported by agent_framework
+# Event handling is done directly in the workflow if needed
 
 
 class WorkflowBuilder:
