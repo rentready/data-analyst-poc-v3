@@ -797,15 +797,14 @@ NEVER end response without executing your plan!"""
         logger.info(f"✅ Data Extractor Agent created")
 
         # Build workflow with only two agents
-        # Note: API changed in agent_framework 1.0.0b251204
+        # Note: API completely changed in agent_framework 1.0.0b251204
+        # Using minimal API to get it working
         workflow = (
             MagenticBuilder()
-            .with_chat_client(agent_client)
             .participants(
                 data_planner=data_planner_agent,
                 data_extractor=data_extractor_agent
             )
-            .with_standard_manager()
             .build()
         )
         
