@@ -13,10 +13,7 @@ from azure.ai.agents.models import (
 
 # Magentic events from agent_framework
 from agent_framework import (
-    MagenticAgentDeltaEvent,
     MagenticAgentMessageEvent,
-    MagenticFinalResultEvent,
-    ExecutorInvokedEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,16 +163,19 @@ class EventRenderer:
             logger.info(f"{event.message.raw_representation}")
             self.render_orchestrator_message(event)
         
-        elif isinstance(event, MagenticAgentDeltaEvent):
-            self.render_agent_delta(event)
-        
         elif isinstance(event, MagenticAgentMessageEvent):
-            self.render_agent_message(event)
+            # Check if it's a delta event (has delta_text attribute)
+            if hasattr(event, 'delta_text'):
+                self.render_agent_delta(event)
+            else:
+                self.render_agent_message(event)
         
-        elif isinstance(event, MagenticFinalResultEvent):
+        elif hasattr(event, 'result') and hasattr(event, 'run_id'):
+            # Final result event
             self.render_final_result(event)
         
-        elif isinstance(event, ExecutorInvokedEvent):
+        elif hasattr(event, 'executor_name') and hasattr(event, 'input_data'):
+            # Executor invoked event
             self.render_executor_invoked(event)
         
         # Azure AI events (ThreadRun, RunStep, MessageDeltaChunk)
@@ -220,11 +220,13 @@ class EventRenderer:
             st.write(message_text)
             st.write("---")
     
-    def render_agent_delta(self, event: MagenticAgentDeltaEvent):
+    def render_agent_delta(self, event):
         """Render agent delta (streaming text) - requires container management from caller."""
         # This method is meant to be called from a streaming context
         # where the caller manages the text accumulation and container
-        logger.debug(f"Agent delta from {event.agent_id}: {event.text}")
+        agent_id = getattr(event, 'agent_id', 'unknown')
+        text = getattr(event, 'delta_text', getattr(event, 'text', ''))
+        logger.debug(f"Agent delta from {agent_id}: {text}")
     
     def render_agent_message(self, event: MagenticAgentMessageEvent):
         """Render complete agent message."""
@@ -239,13 +241,15 @@ class EventRenderer:
         with st.expander(f"{preview}", expanded=False):
             st.markdown(message_text)
     
-    def render_final_result(self, event: MagenticFinalResultEvent):
+    def render_final_result(self, event):
         """Render final workflow result."""
         st.info("**FINAL RESULT:**")
-        if event.message is not None:
+        if hasattr(event, 'message') and event.message is not None:
             st.markdown(event.message.text)
+        elif hasattr(event, 'result'):
+            st.markdown(str(event.result))
     
-    def render_executor_invoked(self, event: ExecutorInvokedEvent):
+    def render_executor_invoked(self, event):
         """Render executor invoked event."""
         st.write(f"**[Executor Invoked - {event.executor_id}]**")
     

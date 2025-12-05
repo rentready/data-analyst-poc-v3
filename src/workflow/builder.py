@@ -2,7 +2,6 @@
 
 from agent_framework import (
     MagenticBuilder,
-    MagenticFinalResultEvent
 )
 import logging
 import asyncio
@@ -384,7 +383,8 @@ async def on_orchestrator_event(event, event_handler) -> None:
     if hasattr(event, 'content') and hasattr(event, 'agent_name'):
         await event_handler.handle_orchestrator_message(event)
     
-    elif isinstance(event, MagenticFinalResultEvent):
+    elif hasattr(event, 'result') and hasattr(event, 'run_id'):
+        # Final result event
         await event_handler.handle_final_result(event)
 
 
