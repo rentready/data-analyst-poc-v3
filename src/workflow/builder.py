@@ -123,27 +123,30 @@ EXAMPLES OF FORBIDDEN VS REQUIRED BEHAVIOR:
 
 YOUR MANDATORY WORKFLOW (EXECUTE EVERY STEP):
 
-STEP 0 - CHECK LOCAL SQL EXAMPLES FIRST (HIGHEST PRIORITY):
-═══════════════════════════════════════════════════════════
-🔴 USE read_sql_example() TOOL BEFORE searching knowledge base!
+STEP 0 - CHECK LOCAL EXAMPLES FIRST (HIGHEST PRIORITY):
+════════════════════════════════════════════════════════════
+🔴 USE read_example() TOOL BEFORE searching knowledge base!
 
-This tool provides expert-verified SQL templates that are 100% accurate.
+This tool provides expert-verified templates & data that are 100% accurate.
 
-Known metrics (call read_sql_example with these names):
-- "перегрузка про" / "pro load" / "professional overload" / "загрузка профессионала"
-- [other templates will be added here]
+AVAILABLE CATEGORIES:
+- "sql": SQL query templates (pro_load, etc.)
+- "definitions": Business metrics, glossary
+- "scripts": Python or other scripts
+- "data": JSON, CSV reference data
 
-WORKFLOW FOR KNOWN METRICS:
-1. Call read_sql_example(metric_name="перегрузка про")
-2. Get complete SQL template
-3. Pass COMPLETE SQL to Data Extractor with instruction: "USE THIS EXACT SQL"
-4. Tell Data Extractor which placeholders to replace: <PRO_ID>, <START_DATE>, <END_DATE>
+WORKFLOW FOR KNOWN QUERIES/DATA:
+1. Call read_example(name="перегрузка про", category="sql")
+2. Get complete template/data
+3. Pass COMPLETE content to Data Extractor with instruction: "USE THIS EXACTLY"
+4. Tell Data Extractor which placeholders to replace (if any)
 
-WHY read_sql_example IS BETTER THAN search_knowledge_base:
-✅ 100% accurate - exact SQL, no risk of incomplete results from search
+WHY read_example IS BETTER THAN search_knowledge_base:
+✅ 100% accurate - exact content, no risk of incomplete AI search results
 ✅ Expert-verified - tested against production data
 ✅ Faster - direct file read, no AI Search API calls
 ✅ Deterministic - same input always gives same output
+✅ Supports any format - SQL, JSON, YAML, markdown, etc.
 
 STEP 1 - SEARCH KNOWLEDGE BASE (IF NO LOCAL EXAMPLE):
 ═══════════════════════════════════════════════════════
@@ -414,78 +417,148 @@ class WorkflowBuilder:
         self.event_handler = event_handler
         self.cosmosdb_search_tool = cosmosdb_search_tool
     
-    @staticmethod
-    def _create_read_sql_example_tool():
-        """Create tool for reading SQL examples from local files."""
-        import os
+    def _create_read_example_tool(self):
+        """Create tool for reading examples from Azure Blob Storage (SQL, JSON, text, etc.)."""
+        import streamlit as st
+        from src.storage.blob_examples import BlobExamplesManager
         
-        def read_sql_example(metric_name: str) -> str:
+        def read_example(name: str, category: str = "sql") -> str:
             """
-            Read expert-verified SQL query template from local examples directory.
+            Read expert-verified template or data from Azure Blob Storage.
             
-            This tool provides 100% accurate SQL templates created by domain experts.
-            These templates are guaranteed to be correct and tested against production data.
+            This tool provides 100% accurate content created by domain experts.
+            Templates are guaranteed to be correct and tested against production data.
             
-            USE THIS TOOL FIRST before searching knowledge base for SQL queries!
+            USE THIS TOOL FIRST before searching knowledge base for exact queries/data!
             
             Args:
-                metric_name: Name of the metric or calculation type. Available metrics:
-                    - "pro_load" or "перегрузка про" or "professional overload" → Pro load calculation
+                name: Name or keyword to find the file. Examples:
+                    - "pro_load" or "перегрузка про" or "professional overload"
+                    - "metrics" for definitions
+                    - filename without extension
+                    
+                category: File category/subdirectory. Options:
+                    - "sql" (default): SQL query templates
+                    - "definitions": Business metrics, glossary
+                    - "scripts": Python or other scripts
+                    - "data": JSON, CSV, or other data files
                     
             Returns:
-                Complete SQL query template with placeholders to replace:
-                    - <PRO_ID>: Professional's bookableresourceid
-                    - <START_DATE>: Start date (format: 'YYYY-MM-DD')
-                    - <END_DATE>: End date (format: 'YYYY-MM-DD')
-                    
-                If metric not found, returns list of available metrics.
+                Complete file content. For templates, may include placeholders to replace.
+                If file not found, returns list of available files.
             """
-            logger.info(f"📁 read_sql_example called: metric_name='{metric_name}'")
-            
-            # Map metric names to SQL files
-            metric_map = {
-                "pro_load": "pro_load_calculation.sql",
-                "перегрузка про": "pro_load_calculation.sql",
-                "professional overload": "pro_load_calculation.sql",
-                "pro load": "pro_load_calculation.sql",
-                "загрузка профессионала": "pro_load_calculation.sql",
-            }
-            
-            metric_lower = metric_name.lower().strip()
-            sql_filename = metric_map.get(metric_lower)
-            
-            if not sql_filename:
-                available = ", ".join(set(metric_map.keys()))
-                return f"Metric '{metric_name}' not found. Available metrics: {available}"
-            
-            # Read SQL file from examples/sql/
-            examples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "examples", "sql")
-            sql_file_path = os.path.join(examples_dir, sql_filename)
+            logger.info(f"📁 read_example called: name='{name}', category='{category}'")
             
             try:
-                with open(sql_file_path, 'r', encoding='utf-8') as f:
-                    sql_content = f.read()
+                # Initialize Blob Storage manager
+                connection_string = st.secrets["azure_storage"]["connection_string"]
+                container_name = st.secrets["azure_storage"]["examples_container_name"]
                 
-                logger.info(f"✅ Successfully read SQL template: {sql_filename} ({len(sql_content)} chars)")
-                return f"""SQL template for '{metric_name}' (file: {sql_filename}):
-
-{sql_content}
-
-🔴 CRITICAL INSTRUCTIONS:
+                blob_manager = BlobExamplesManager(
+                    connection_string=connection_string,
+                    container_name=container_name
+                )
+            except Exception as e:
+                logger.error(f"Failed to initialize blob manager: {e}")
+                return f"ERROR: Could not access Azure Blob Storage: {str(e)}"
+            
+            # Map common names to files (category -> {aliases -> filename})
+            file_map = {
+                "sql": {
+                    "pro_load": "pro_load_calculation.sql",
+                    "перегрузка про": "pro_load_calculation.sql",
+                    "professional overload": "pro_load_calculation.sql",
+                    "pro load": "pro_load_calculation.sql",
+                    "загрузка профессионала": "pro_load_calculation.sql",
+                },
+                "definitions": {
+                    "metrics": "metrics.md",
+                    "метрики": "metrics.md",
+                    "business metrics": "metrics.md",
+                }
+            }
+            
+            name_lower = name.lower().strip()
+            
+            # Try to find file by alias
+            filename = None
+            if category in file_map and name_lower in file_map[category]:
+                filename = file_map[category][name_lower]
+            else:
+                # Try direct filename match in blob storage
+                extensions = ['.sql', '.md', '.txt', '.json', '.py', '.yaml', '.yml', '.csv']
+                
+                # Get all blobs in category
+                blobs = blob_manager.list_blobs(category=category)
+                
+                # Try exact match first
+                for ext in extensions:
+                    test_filename = f"{name_lower}{ext}"
+                    for blob_info in blobs:
+                        if blob_info['filename'].lower() == test_filename:
+                            filename = blob_info['filename']
+                            break
+                    if filename:
+                        break
+                
+                # Try partial match
+                if not filename:
+                    for blob_info in blobs:
+                        if name_lower in blob_info['filename'].lower():
+                            filename = blob_info['filename']
+                            break
+            
+            if not filename:
+                # List available files
+                blobs = blob_manager.list_blobs(category=category)
+                available = [b['filename'] for b in blobs]
+                
+                return f"File '{name}' not found in category '{category}'. Available files: {', '.join(available) if available else 'none'}"
+            
+            # Read file from blob storage
+            relative_path = f"{category}/{filename}"
+            
+            try:
+                content = blob_manager.read_blob(relative_path)
+                
+                if not content:
+                    return f"ERROR: File '{filename}' found but could not read content"
+                
+                file_ext = filename.split('.')[-1].upper() if '.' in filename else 'TXT'
+                logger.info(f"✅ Successfully read template from blob: {relative_path} ({len(content)} chars)")
+                
+                # Add usage instructions based on file type
+                instructions = ""
+                if file_path.suffix == '.sql':
+                    instructions = """
+🔴 CRITICAL INSTRUCTIONS FOR SQL:
 1. COPY this SQL EXACTLY - every character matters
-2. ONLY replace placeholders: <PRO_ID>, <START_DATE>, <END_DATE>
+2. ONLY replace placeholders (in angle brackets like <PRO_ID>)
 3. DO NOT modify: JOINs, WHERE conditions, CASE expressions
 4. Keep ALL filters and conditions as shown
-5. This SQL was written and verified by domain experts - use it as-is!"""
+5. This was written and verified by domain experts - use as-is!"""
+                elif file_path.suffix in ['.json', '.yaml', '.yml']:
+                    instructions = """
+💡 USAGE INSTRUCTIONS:
+1. Use this data structure as-is
+2. Parse/deserialize if needed
+3. Do not modify the structure unless explicitly required"""
+                else:
+                    instructions = """
+💡 USAGE INSTRUCTIONS:
+1. Use this content as reference or template
+2. Follow any guidelines or rules specified in the content"""
                 
-            except FileNotFoundError:
-                logger.error(f"❌ SQL file not found: {sql_file_path}")
-                return f"ERROR: SQL file '{sql_filename}' not found at {sql_file_path}"
+                return f"""{file_ext} template '{name}' (Azure Blob: {relative_path}):
+
+{content}
+{instructions}"""
+                
             except Exception as e:
-                logger.error(f"❌ Error reading SQL file: {e}")
-                return f"ERROR reading SQL file: {str(e)}"
+                logger.error(f"❌ Error reading blob: {e}")
+                return f"ERROR reading blob: {str(e)}"
         
-        return read_sql_example
+        return read_example
     
     async def build_workflow(self, threads: dict, prompt: str):
         """
@@ -509,10 +582,10 @@ class WorkflowBuilder:
             thread_id=threads["orchestrator"].id
         )
         
-        # Create local SQL example reader tool (PRIORITY #1 - always available)
-        read_sql_example = self._create_read_sql_example_tool()
-        kb_tools = [read_sql_example]
-        logger.info("✅ SQL Example Reader tool created (read_sql_example)")
+        # Create local example reader tool (PRIORITY #1 - always available)
+        read_example = self._create_read_example_tool()
+        kb_tools = [read_example]
+        logger.info("✅ Local Example Reader tool created (read_example)")
         
         # Create Azure AI Search tool as an annotated function (this is what works!)
         try:
@@ -650,10 +723,10 @@ EXAMPLE - User: "Calculate перегрузка Про for Magdalena in Septembe
 ═══════════════════════════════════════════════════════════════
 
 ✅ CORRECT RESPONSE:
-"I will search the knowledge base for перегрузка Про definition and find Magdalena."
+"I will check local examples for перегрузка Про SQL template and find Magdalena."
 
 [Immediately call tool:]
-search_knowledge_base(query="перегрузка Про Magdalena", search_type="all", top_k=10)
+read_example(name="перегрузка про", category="sql")
 
 [After getting results:]
 "Found definition. Now searching for Magdalena in database."

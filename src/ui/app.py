@@ -120,9 +120,31 @@ class DataAnalystApp:
         """Render the main UI components."""
         st.title("🤖 Data Analyst Chat")
         
-        # Render Knowledge Base UI in sidebar
+        # Render Knowledge Bases UI in sidebar
         with st.sidebar:
             st.markdown("---")
+            
+            # 1. Direct KB from Azure Blob Storage - Priority #1
+            try:
+                from src.ui.local_examples_ui import render_local_examples_sidebar
+                from src.storage.blob_examples import BlobExamplesManager
+                
+                # Initialize Blob Storage manager
+                connection_string = st.secrets["azure_storage"]["connection_string"]
+                container_name = st.secrets["azure_storage"]["examples_container_name"]
+                
+                blob_manager = BlobExamplesManager(
+                    connection_string=connection_string,
+                    container_name=container_name
+                )
+                
+                render_local_examples_sidebar(blob_manager)
+            except Exception as e:
+                logger.warning(f"⚠️ Direct KB UI not available: {e}")
+            
+            st.markdown("---")
+            
+            # 2. Azure AI Search (Semantic KB) - For definitions and context
             try:
                 from src.ui.search_kb_ui import render_knowledge_base_sidebar
                 from src.search.indexer import DocumentIndexer
@@ -142,10 +164,10 @@ class DataAnalystApp:
                     embeddings_generator=embeddings
                 )
                 
-                # Render KB UI
+                # Render Semantic KB UI
                 render_knowledge_base_sidebar(indexer)
             except Exception as e:
-                logger.warning(f"⚠️ Knowledge Base UI not available: {e}")
+                logger.warning(f"⚠️ Semantic Knowledge Base UI not available: {e}")
             
             # Conversation controls
             st.markdown("---")

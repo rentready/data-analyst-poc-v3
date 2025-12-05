@@ -1,8 +1,8 @@
-# Examples Directory - Expert-Verified SQL Templates
+# Examples Directory - Expert-Verified Templates & Data
 
 ## 🎯 Purpose
 
-This directory contains **expert-verified SQL templates and business definitions** that AI agents use to ensure 100% accurate calculations.
+This directory contains **expert-verified templates, queries, and reference data** that AI agents use to ensure 100% accurate calculations and decisions.
 
 ## 📂 Structure
 
@@ -11,43 +11,49 @@ examples/
 ├── sql/                    # SQL query templates
 │   ├── pro_load_calculation.sql
 │   └── README.md
-├── definitions/            # Business metrics definitions
+├── definitions/            # Business metrics & glossary
 │   └── metrics.md
+├── scripts/                # Python, YAML scripts (optional)
+├── data/                   # JSON, CSV reference data (optional)
 └── README.md              # This file
 ```
+
+**Supported formats**: `.sql`, `.md`, `.txt`, `.json`, `.py`, `.yaml`, `.csv`, `.xml`
 
 ## 🚀 How It Works
 
 ### Problem We Solved
 
 Previously, AI agents would:
-1. Search Azure AI Search for SQL queries (unreliable, sometimes returns partial results)
-2. **Simplify or modify** the SQL (removing JOINs, WHERE conditions)
-3. **Invent their own formulas** (adding coefficients like 1.2x)
+1. Search Azure AI Search (unreliable, sometimes returns partial results)
+2. **Simplify or modify** content (removing important details)
+3. **Invent their own logic** (adding assumptions)
 4. Get **incorrect results** ❌
 
-### Solution: Local SQL Templates
+### Solution: Local Templates & Data
 
 Now, AI agents:
-1. Call `read_sql_example(metric_name="перегрузка про")` tool **FIRST**
-2. Get **complete, expert-verified SQL** from local file
-3. Use SQL **EXACTLY as-is**, only replacing placeholders
+1. Call `read_example(name="перегрузка про", category="sql")` tool **FIRST**
+2. Get **complete, expert-verified content** from local file
+3. Use content **EXACTLY as-is**, only replacing placeholders if needed
 4. Get **correct results** ✅
 
 ## 🔧 For AI Agents
 
-### When to Use `read_sql_example()` Tool
+### When to Use `read_example()` Tool
 
 **ALWAYS call this tool FIRST** when user asks about:
-- "перегрузка про" / "pro load" / "professional overload"
-- "загрузка профессионала" / "перегрузка профессионала"
-- Any metric with known SQL template
+- Known calculations: "перегрузка про", "pro load", etc.
+- Business definitions: "what is DSAT?", "metrics definitions"
+- Reference data: configuration, lookup tables
+- Standard queries or scripts
 
-### Usage Example
+### Usage Examples
 
+**SQL Template:**
 ```python
 # Step 1: Get SQL template
-result = read_sql_example(metric_name="перегрузка про")
+result = read_example(name="перегрузка про", category="sql")
 
 # Step 2: Replace placeholders
 sql = result.replace("<PRO_ID>", "f7fef730-b009-ec11-b6e6-000d3a8d582c")
@@ -56,6 +62,20 @@ sql = sql.replace("<END_DATE>", "2025-10-01")
 
 # Step 3: Execute with MCP
 mcp_rentready-prod_execute_sql(query=sql)
+```
+
+**Business Definitions:**
+```python
+# Get metrics definitions
+definitions = read_example(name="metrics", category="definitions")
+# Parse and use to understand business rules
+```
+
+**Reference Data:**
+```python
+# Get JSON configuration
+config = read_example(name="status_codes", category="data")
+# Parse JSON and use as lookup table
 ```
 
 ### 🚫 DO NOT

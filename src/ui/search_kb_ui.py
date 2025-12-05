@@ -19,7 +19,8 @@ def render_knowledge_base_sidebar(indexer: DocumentIndexer) -> None:
         indexer: Document indexer instance
     """
     with st.sidebar:
-        st.header('📚 Knowledge Base')
+        st.header('🔍 Knowledge Base (semantic)')
+        st.caption('AI Search with uploaded documents')
         
         try:
             # Get index statistics
