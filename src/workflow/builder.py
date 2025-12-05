@@ -797,19 +797,15 @@ NEVER end response without executing your plan!"""
         logger.info(f"✅ Data Extractor Agent created")
 
         # Build workflow with only two agents
+        # Note: API changed in agent_framework 1.0.0b251204
         workflow = (
             MagenticBuilder()
+            .with_chat_client(agent_client)
             .participants(
                 data_planner=data_planner_agent,
                 data_extractor=data_extractor_agent
             )
-            .with_standard_manager(
-                chat_client=agent_client,
-                max_round_count=30,  # Increased for complex multi-step tasks
-                max_stall_count=8,   # More tolerance for complex operations
-                max_reset_count=8,   # Allow more retries for difficult queries
-            )
-            .with_instructions(ORCHESTRATOR_INSTRUCTIONS)
+            .with_standard_manager()
             .build()
         )
         
