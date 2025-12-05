@@ -123,11 +123,33 @@ EXAMPLES OF FORBIDDEN VS REQUIRED BEHAVIOR:
 
 YOUR MANDATORY WORKFLOW (EXECUTE EVERY STEP):
 
-STEP 1 - SEARCH KNOWLEDGE BASE (CANNOT SKIP):
-═══════════════════════════════════════════════
+STEP 0 - CHECK LOCAL SQL EXAMPLES FIRST (HIGHEST PRIORITY):
+═══════════════════════════════════════════════════════════
+🔴 USE read_sql_example() TOOL BEFORE searching knowledge base!
+
+This tool provides expert-verified SQL templates that are 100% accurate.
+
+Known metrics (call read_sql_example with these names):
+- "перегрузка про" / "pro load" / "professional overload" / "загрузка профессионала"
+- [other templates will be added here]
+
+WORKFLOW FOR KNOWN METRICS:
+1. Call read_sql_example(metric_name="перегрузка про")
+2. Get complete SQL template
+3. Pass COMPLETE SQL to Data Extractor with instruction: "USE THIS EXACT SQL"
+4. Tell Data Extractor which placeholders to replace: <PRO_ID>, <START_DATE>, <END_DATE>
+
+WHY read_sql_example IS BETTER THAN search_knowledge_base:
+✅ 100% accurate - exact SQL, no risk of incomplete results from search
+✅ Expert-verified - tested against production data
+✅ Faster - direct file read, no AI Search API calls
+✅ Deterministic - same input always gives same output
+
+STEP 1 - SEARCH KNOWLEDGE BASE (IF NO LOCAL EXAMPLE):
+═══════════════════════════════════════════════════════
 Call: search_knowledge_base(query="<full user request>", search_type="all", top_k=5)
 - This finds definitions and context for ANY terms
-- Do this FIRST, before making assumptions
+- Do this if no local SQL template exists
 - Example terms to search: "профессионал", "bookable resource", person names, properties
 
 🔴 CRITICAL: IF KNOWLEDGE BASE RETURNS SQL QUERY - USE IT AS IS!
@@ -230,28 +252,110 @@ Summary: Magdalena Campos - R had 15 bookings in September 2025, totaling 120 ho
 YOUR MANDATORY WORKFLOW (EXECUTE EVERY STEP):
 ═══════════════════════════════════════════════════════════════
 
+🔴🔴🔴 ABSOLUTE RULE #0: USE SQL FROM DATA PLANNER EXACTLY! 🔴🔴🔴
+
+If Data Planner provides SQL template (from read_sql_example tool or Knowledge Base):
+1. COPY the SQL EXACTLY - character by character
+2. ONLY replace placeholders: <PRO_ID>, <START_DATE>, <END_DATE>
+3. DO NOT modify anything else - no JOINs, WHERE conditions, CASE expressions
+4. Pass complete SQL to mcp_rentready-prod_execute_sql()
+
 STEP 1 - USE MCP TOOLS (CANNOT SKIP):
 - mcp_rentready-prod_execute_sql() to run queries
 - mcp_rentready-prod_find_accounts() to search entities
 - mcp_rentready-prod_find_work_orders() for work orders
 - Execute immediately, don't just show SQL
 
-🔴🔴🔴 ABSOLUTE RULE: USE FORMULAS FROM DATA PLANNER EXACTLY! 🔴🔴🔴
-- If Data Planner gave you a CASE formula → USE IT CHARACTER BY CHARACTER
-- Do NOT invent your own formula or add coefficients (like 1.2, 1.5, etc.)
-- Do NOT reinterpret category meanings (0/1/2/3 have FIXED definitions)
-- Do NOT simplify SQL - use ALL JOINs, WHERE conditions, GROUP BY as provided
+🔴🔴🔴 ABSOLUTE RULE #1: USE SQL FROM SOURCES EXACTLY AS IS! 🔴🔴🔴
 
-EXAMPLE OF VIOLATION:
-❌ Data Planner says: "0=no load, 1=low (<maxcap), 2=equal, 3=over"
-❌ You write: "0=below, 1=at, 2=over but ≤1.2x, 3=over 1.2x" ← THIS IS WRONG!
-✅ You MUST use: EXACTLY what Data Planner provided, no modifications!
+When Data Planner or Knowledge Base or Local File provides SQL query, you MUST:
+✅ Use ALL JOINs exactly as shown - do NOT remove any JOIN
+✅ Use ALL WHERE conditions - do NOT remove any filter
+✅ Use CASE expressions character-by-character - do NOT modify logic
+✅ Keep ALL GROUP BY, ORDER BY clauses
+✅ Only replace placeholder values: IDs, dates, names
+
+❌ FORBIDDEN SIMPLIFICATIONS - NEVER DO THIS:
+
+1️⃣ ❌ Removing JOINs:
+   KB gives: `FROM bookableresourcebooking brb LEFT JOIN msdyn_workorder wo ON ...`
+   You write: `FROM bookableresourcebooking brb` ← WRONG! Keep the JOIN!
+
+2️⃣ ❌ Removing WHERE conditions:
+   KB gives: `WHERE ... AND wo.msdyn_systemstatus IN (690970004, 690970003, 690970002, 690970001) AND wo.statuscode = 1 AND wo.rr_workscheduleddate IS NOT NULL AND brb.bookingstatus = 'c33410b9-1abe-4631-b4e9-6e4a1113af34'`
+   You write: `WHERE ...` ← WRONG! Keep ALL filters!
+
+3️⃣ ❌ Simplifying CASE logic:
+   KB gives: `CASE WHEN x=0 THEN 0 WHEN x<y THEN 1 WHEN x=y THEN 2 WHEN x>y THEN 3 END`
+   You write: `x - y` ← WRONG! Use the CASE!
+
+4️⃣ ❌ Changing category meanings:
+   KB says: "0=no load, 1=low, 2=equal, 3=over"
+   You interpret: "0=below, 1=at, 2=over 1.2x" ← WRONG!
+
+✅ CORRECT BEHAVIOR - COPY-PASTE APPROACH:
+If KB gives this SQL template:
+```sql
+SELECT CASE WHEN SUM(x) < y THEN 1 END
+FROM table1 t1
+LEFT JOIN table2 t2 ON t1.id = t2.fk
+WHERE t2.status IN (1,2,3) AND t2.date IS NOT NULL
+```
+
+You MUST use:
+```sql
+SELECT CASE WHEN SUM(x) < y THEN 1 END  -- Keep EXACT CASE logic
+FROM table1 t1
+LEFT JOIN table2 t2 ON t1.id = t2.fk   -- Keep JOIN
+WHERE t2.status IN (1,2,3)              -- Keep status filter
+  AND t2.date IS NOT NULL               -- Keep date filter
+  AND t1.id = '<REPLACE_WITH_ACTUAL_ID>' -- Only add/replace IDs
+```
+
+🔴 RULE: If SQL from KB has 5 lines, your SQL should have 5 lines (plus ID replacements).
+🔴 RULE: If SQL from KB has 3 JOINs, your SQL must have 3 JOINs.
+🔴 RULE: If SQL from KB has 8 WHERE conditions, your SQL must have 8 WHERE conditions.
 
 STEP 2 - HANDLE FAILURES (KEEP TRYING):
 - If query fails: check table names, try different conditions
 - If no results: try LIKE instead of =, try partial matches
 - If error: read error message, fix query, retry
 - Don't give up - keep trying until you get data
+
+🔴 CRITICAL: NAME SEARCH STRATEGY (USE THIS ORDER):
+When searching for entities by name (people, properties, etc.):
+
+1️⃣ FIRST - Try exact match:
+   `WHERE name = 'Magdalena Campos - R'`
+
+2️⃣ SECOND - Try full phrase match:
+   `WHERE name LIKE '%Magdalena Campos - R%'`
+
+3️⃣ THIRD - Try ALL words with AND (NOT OR!):
+   `WHERE name LIKE '%Magdalena%' AND name LIKE '%Campos%'`
+   
+   ⚠️ Skip very short words (1-2 letters) like "R" in this step
+   ⚠️ For short words, only use if combined with longer words
+
+❌ FORBIDDEN - DO NOT USE:
+   `WHERE name LIKE '%R%'` ← Too broad! Returns thousands of records
+   `WHERE name LIKE '%Magdalena%' OR name LIKE '%R%'` ← OR with short word = bad!
+
+✅ CORRECT EXAMPLE:
+   User asks: "Find Magdalena Campos - R"
+   
+   Try 1: `SELECT * FROM bookableresource WHERE name = 'Magdalena Campos - R'`
+   ↓ If no results
+   Try 2: `SELECT * FROM bookableresource WHERE name LIKE '%Magdalena Campos - R%'`
+   ↓ If no results  
+   Try 3: `SELECT * FROM bookableresource WHERE name LIKE '%Magdalena%' AND name LIKE '%Campos%'`
+   ✅ Found: "Magdalena Campos - R"
+
+❌ WRONG EXAMPLE:
+   `SELECT * FROM bookableresource 
+    WHERE name LIKE '%Magdalena%' 
+       OR name LIKE '%Campos%' 
+       OR name LIKE '%R%'` ← Returns 10,000+ records including "Robert", "Richard", etc.
 
 STEP 3 - SHOW ACTUAL DATA (MANDATORY):
 - Present results in clear tables
@@ -310,6 +414,79 @@ class WorkflowBuilder:
         self.event_handler = event_handler
         self.cosmosdb_search_tool = cosmosdb_search_tool
     
+    @staticmethod
+    def _create_read_sql_example_tool():
+        """Create tool for reading SQL examples from local files."""
+        import os
+        
+        def read_sql_example(metric_name: str) -> str:
+            """
+            Read expert-verified SQL query template from local examples directory.
+            
+            This tool provides 100% accurate SQL templates created by domain experts.
+            These templates are guaranteed to be correct and tested against production data.
+            
+            USE THIS TOOL FIRST before searching knowledge base for SQL queries!
+            
+            Args:
+                metric_name: Name of the metric or calculation type. Available metrics:
+                    - "pro_load" or "перегрузка про" or "professional overload" → Pro load calculation
+                    
+            Returns:
+                Complete SQL query template with placeholders to replace:
+                    - <PRO_ID>: Professional's bookableresourceid
+                    - <START_DATE>: Start date (format: 'YYYY-MM-DD')
+                    - <END_DATE>: End date (format: 'YYYY-MM-DD')
+                    
+                If metric not found, returns list of available metrics.
+            """
+            logger.info(f"📁 read_sql_example called: metric_name='{metric_name}'")
+            
+            # Map metric names to SQL files
+            metric_map = {
+                "pro_load": "pro_load_calculation.sql",
+                "перегрузка про": "pro_load_calculation.sql",
+                "professional overload": "pro_load_calculation.sql",
+                "pro load": "pro_load_calculation.sql",
+                "загрузка профессионала": "pro_load_calculation.sql",
+            }
+            
+            metric_lower = metric_name.lower().strip()
+            sql_filename = metric_map.get(metric_lower)
+            
+            if not sql_filename:
+                available = ", ".join(set(metric_map.keys()))
+                return f"Metric '{metric_name}' not found. Available metrics: {available}"
+            
+            # Read SQL file from examples/sql/
+            examples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "examples", "sql")
+            sql_file_path = os.path.join(examples_dir, sql_filename)
+            
+            try:
+                with open(sql_file_path, 'r', encoding='utf-8') as f:
+                    sql_content = f.read()
+                
+                logger.info(f"✅ Successfully read SQL template: {sql_filename} ({len(sql_content)} chars)")
+                return f"""SQL template for '{metric_name}' (file: {sql_filename}):
+
+{sql_content}
+
+🔴 CRITICAL INSTRUCTIONS:
+1. COPY this SQL EXACTLY - every character matters
+2. ONLY replace placeholders: <PRO_ID>, <START_DATE>, <END_DATE>
+3. DO NOT modify: JOINs, WHERE conditions, CASE expressions
+4. Keep ALL filters and conditions as shown
+5. This SQL was written and verified by domain experts - use it as-is!"""
+                
+            except FileNotFoundError:
+                logger.error(f"❌ SQL file not found: {sql_file_path}")
+                return f"ERROR: SQL file '{sql_filename}' not found at {sql_file_path}"
+            except Exception as e:
+                logger.error(f"❌ Error reading SQL file: {e}")
+                return f"ERROR reading SQL file: {str(e)}"
+        
+        return read_sql_example
+    
     async def build_workflow(self, threads: dict, prompt: str):
         """
         Build complete Magentic workflow with two streamlined agents.
@@ -332,8 +509,12 @@ class WorkflowBuilder:
             thread_id=threads["orchestrator"].id
         )
         
+        # Create local SQL example reader tool (PRIORITY #1 - always available)
+        read_sql_example = self._create_read_sql_example_tool()
+        kb_tools = [read_sql_example]
+        logger.info("✅ SQL Example Reader tool created (read_sql_example)")
+        
         # Create Azure AI Search tool as an annotated function (this is what works!)
-        kb_tools = []
         try:
             from src.search_config import get_file_search_client, get_embeddings_generator
             from src.search.client import SearchClient
