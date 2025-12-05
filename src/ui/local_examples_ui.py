@@ -151,7 +151,16 @@ def render_local_examples_sidebar(blob_manager: BlobExamplesManager) -> None:
                             with col_badge:
                                 st.caption(f"`{template['type']}`")
                             
-                            st.caption(f"📄 `{rel_path}` • {template['lines']} lines")
+                            # Format file size
+                            size_bytes = template['size']
+                            if size_bytes < 1024:
+                                size_str = f"{size_bytes} bytes"
+                            elif size_bytes < 1024 * 1024:
+                                size_str = f"{size_bytes / 1024:.1f} KB"
+                            else:
+                                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                            
+                            st.caption(f"📄 `{rel_path}` • {size_str}")
                             
                             if template['description']:
                                 st.info(template['description'])
