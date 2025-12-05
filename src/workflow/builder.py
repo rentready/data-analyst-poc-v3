@@ -804,12 +804,12 @@ NEVER end response without executing your plan!"""
                 data_extractor=data_extractor_agent
             )
             .with_standard_manager(
-                instructions=ORCHESTRATOR_INSTRUCTIONS,
                 chat_client=agent_client,
                 max_round_count=30,  # Increased for complex multi-step tasks
                 max_stall_count=8,   # More tolerance for complex operations
                 max_reset_count=8,   # Allow more retries for difficult queries
             )
+            .with_instructions(ORCHESTRATOR_INSTRUCTIONS)
             .build()
         )
         
