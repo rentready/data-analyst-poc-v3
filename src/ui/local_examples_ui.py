@@ -165,8 +165,8 @@ def render_local_examples_sidebar(blob_manager: BlobExamplesManager) -> None:
                             if template['description']:
                                 st.info(template['description'])
                             
-                            # Action buttons
-                            col1, col2 = st.columns([2, 1])
+                            # Action buttons row 1: View + Download
+                            col1, col2 = st.columns(2)
                             
                             with col1:
                                 expander_key = f'expand_{rel_path}'
@@ -176,31 +176,83 @@ def render_local_examples_sidebar(blob_manager: BlobExamplesManager) -> None:
                                 
                                 if st.button('👁️ View', key=f'view_{rel_path}', use_container_width=True):
                                     st.session_state[expander_key] = not st.session_state[expander_key]
-                                
-                                if st.session_state[expander_key]:
-                                    content = read_template(blob_manager, rel_path)
-                                    if content:
-                                        # Choose language for syntax highlighting
-                                        lang_map = {
-                                            'SQL': 'sql',
-                                            'PY': 'python',
-                                            'JSON': 'json',
-                                            'YAML': 'yaml',
-                                            'YML': 'yaml',
-                                            'MD': 'markdown',
-                                            'CSV': 'csv',
-                                            'TXT': 'text'
-                                        }
-                                        lang = lang_map.get(template['type'], 'text')
-                                        
-                                        with st.expander(f'📝 {template["type"]} Content', expanded=True):
-                                            st.code(content, language=lang, line_numbers=True)
-                                    else:
-                                        st.error('Could not load template')
                             
                             with col2:
-                                # Copy to clipboard info
-                                st.caption('💡 Use tool')
+                                # Download button - load content only when needed
+                                content_key = f'content_{rel_path}'
+                                
+                                # Check if content is already loaded
+                                if content_key not in st.session_state:
+                                    if st.button('📥 Download', key=f'dl_btn_{rel_path}', use_container_width=True):
+                                        # Load content into session state
+                                        content = read_template(blob_manager, rel_path)
+                                        if content:
+                                            st.session_state[content_key] = content
+                                            st.rerun()
+                                else:
+                                    # Content loaded - show download button
+                                    st.download_button(
+                                        label='📥 Download',
+                                        data=st.session_state[content_key],
+                                        file_name=filename,
+                                        mime='text/plain',
+                                        key=f'dl_{rel_path}',
+                                        use_container_width=True
+                                    )
+                            
+                            # Show content if expanded
+                            if st.session_state[expander_key]:
+                                content = read_template(blob_manager, rel_path)
+                                if content:
+                                    # Choose language for syntax highlighting
+                                    lang_map = {
+                                        'SQL': 'sql',
+                                        'PY': 'python',
+                                        'JSON': 'json',
+                                        'YAML': 'yaml',
+                                        'YML': 'yaml',
+                                        'MD': 'markdown',
+                                        'CSV': 'csv',
+                                        'TXT': 'text'
+                                    }
+                                    lang = lang_map.get(template['type'], 'text')
+                                    
+                                    with st.expander(f'📝 {template["type"]} Content', expanded=True):
+                                        st.code(content, language=lang, line_numbers=True)
+                                else:
+                                    st.error('Could not load template')
+                            
+                            # Action buttons row 2: Delete
+                            col3, col4 = st.columns([1, 3])
+                            
+                            with col3:
+                                if st.button('🗑️ Delete', key=f'del_{rel_path}', use_container_width=True, type='secondary'):
+                                    # Set delete confirmation flag
+                                    st.session_state[f'confirm_delete_{rel_path}'] = True
+                                    st.rerun()
+                            
+                            with col4:
+                                # Show confirmation if delete was clicked
+                                if st.session_state.get(f'confirm_delete_{rel_path}', False):
+                                    st.warning('⚠️ Confirm deletion?')
+                                    col_yes, col_no = st.columns(2)
+                                    
+                                    with col_yes:
+                                        if st.button('✅ Yes', key=f'confirm_yes_{rel_path}', use_container_width=True):
+                                            # Delete from blob storage
+                                            if blob_manager.delete_blob(rel_path):
+                                                st.success(f'✅ Deleted {filename}')
+                                                # Clean up session state
+                                                st.session_state.pop(f'confirm_delete_{rel_path}', None)
+                                                st.session_state.pop(content_key, None)
+                                                st.rerun()
+                                            else:
+                                                st.error(f'❌ Failed to delete {filename}')
+                                    
+                                    with col_no:
+                                        if st.button('❌ No', key=f'confirm_no_{rel_path}', use_container_width=True):
+                                            st.session_state.pop(f'confirm_delete_{rel_path}', None)
+                                            st.rerun()
                             
                             st.divider()
             else:
